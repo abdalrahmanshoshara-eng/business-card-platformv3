@@ -1,0 +1,65 @@
+# ── Python ──────────────────────────────────────────────────
+**/__pycache__/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+backend/.venv/
+.venv/
+venv/
+env/
+
+# Django runtime
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Environment secrets — NEVER commit real .env files
+.env
+backend/.env
+frontend/.env.local
+# Keep .env.example files (templates only)
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# ── Node.js ──────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+.npm/
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+
+# ── Docker ───────────────────────────────────────────────────
+# (docker-compose.yml and Dockerfiles should be committed)
+
+# ── Testing / Coverage ───────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.eslintcache/
+
+# ── IDE ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+npm-debug.log*

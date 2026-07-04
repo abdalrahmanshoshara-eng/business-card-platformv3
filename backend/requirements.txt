@@ -1,0 +1,15 @@
+Django==5.1.4
+djangorestframework==3.15.2
+django-cors-headers==4.6.0
+dj-database-url==2.3.0
+python-dotenv==1.0.1
+google-genai==1.54.0
+pydantic==2.10.4
+pillow==11.0.0
+httpx==0.28.1
+beautifulsoup4==4.12.3
+phonenumbers==8.13.52
+openpyxl==3.1.5
+gunicorn==21.2.0
+whitenoise==6.7.0
+psycopg2-binary==2.9.9

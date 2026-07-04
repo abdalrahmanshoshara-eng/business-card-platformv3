@@ -1,0 +1,28 @@
+# Build output
+.next/
+out/
+
+# Dependencies (installed fresh in Docker)
+node_modules/
+
+# Environment files (injected as build args or env_file at runtime)
+.env
+.env.*
+!.env.example
+
+# Dev tools
+.eslintcache
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
