@@ -272,7 +272,7 @@ button:disabled { opacity: .58; cursor: wait; }
 .status { color: var(--text-soft); min-height: 24px; font-size: 14px; margin-top: 12px; font-weight: 800; }
 .status-box { padding: 13px 15px; border-radius: 14px; background: rgba(199,166,107,.12); border: 1px solid var(--gold-border); color: var(--text-muted); }
 .status.error, .status-box.error { color: var(--danger); background: #fff1ee; border-color: rgba(192,57,43,.25); }
-.status.success, .status-box.success { color: var(--success); background: #eef9f3; border-color：rgba(23,109,76,.25); }
+.status.success, .status-box.success { color: var(--success); background: #eef9f3; border-color: rgba(23,109,76,.25); }
 .hidden { display: none !important; }
 .gold-divider { border: none; border-top: 1px solid var(--gold-border); margin: 22px 0; }
 .helper-text { color: var(--text-muted); font-size: 14px; margin: 14px 0 0; }
