@@ -34,13 +34,19 @@ def combine_bilingual(arabic: str, english: str, fallback: str = '') -> str:
     return (fallback or '').strip()
 
 
-def prepare_card_data(data: dict, *, infer_missing_investment: bool = True) -> dict:
+def prepare_card_data(
+    data: dict,
+    *,
+    infer_missing_investment: bool = True,
+    touched_fields: set[str] | None = None,
+) -> dict:
     """Normalize incoming card payloads before saving them in BusinessCard.
 
     This function is intentionally shared by the API and Excel import command so
     manual imports and AI-extracted cards follow the same rules.
     """
     prepared = dict(data)
+    touched_fields = touched_fields or set()
     prepared['mobile_numbers'] = normalize_phones(prepared.get('mobile_numbers', []))
     prepared['emails'] = clean_list(prepared.get('emails', []))
     prepared['website'] = normalize_website(prepared.get('website', ''))
@@ -49,7 +55,17 @@ def prepare_card_data(data: dict, *, infer_missing_investment: bool = True) -> d
         value = prepared.get(base_name, '') or ''
         arabic_field = f'{base_name}_ar'
         english_field = f'{base_name}_en'
-        if value and not prepared.get(arabic_field) and not prepared.get(english_field):
+        base_was_touched = base_name in touched_fields
+        split_from_base = (
+            base_was_touched
+            and arabic_field not in touched_fields
+            and english_field not in touched_fields
+        )
+        if split_from_base:
+            arabic_value, english_value = split_bilingual_lines(value)
+            prepared[arabic_field] = arabic_value
+            prepared[english_field] = english_value
+        elif value and not prepared.get(arabic_field) and not prepared.get(english_field):
             arabic_value, english_value = split_bilingual_lines(value)
             prepared[arabic_field] = arabic_value
             prepared[english_field] = english_value

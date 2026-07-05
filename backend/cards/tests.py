@@ -175,3 +175,46 @@ class NaturalSearchApiTests(TestCase):
         names = [c['company_name'] for c in response.data['results']]
         self.assertIn('CIPER', names)
         self.assertNotIn('Engineering Consult Co', names)
+
+
+class BusinessCardUpdateApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_patch_base_job_title_replaces_existing_bilingual_title(self):
+        card = make_card(
+            job_title='Old Arabic\nOld English',
+            job_title_ar='Old Arabic',
+            job_title_en='Old English',
+        )
+
+        response = self.client.patch(
+            f'/api/cards/{card.id}',
+            {'job_title': 'New Position'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        card.refresh_from_db()
+        self.assertEqual(card.job_title, 'New Position')
+        self.assertEqual(card.job_title_ar, 'New Position')
+        self.assertEqual(card.job_title_en, '')
+
+    def test_patch_base_job_title_can_clear_existing_bilingual_title(self):
+        card = make_card(
+            job_title='Old Arabic\nOld English',
+            job_title_ar='Old Arabic',
+            job_title_en='Old English',
+        )
+
+        response = self.client.patch(
+            f'/api/cards/{card.id}',
+            {'job_title': ''},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        card.refresh_from_db()
+        self.assertEqual(card.job_title, '')
+        self.assertEqual(card.job_title_ar, '')
+        self.assertEqual(card.job_title_en, '')

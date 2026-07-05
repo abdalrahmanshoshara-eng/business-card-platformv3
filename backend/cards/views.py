@@ -95,7 +95,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             if field.name not in {'id', 'sequence_number', 'created_at', 'updated_at', 'front_image', 'back_image'}
         }
         current.update(serializer.validated_data)
-        data = _prepare_data(current)
+        data = prepare_card_data(current, touched_fields=set(serializer.validated_data))
         serializer.save(**data)
 
     @action(detail=False, methods=['post'], url_path='extract')
