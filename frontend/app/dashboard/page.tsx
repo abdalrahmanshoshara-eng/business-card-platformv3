@@ -1039,7 +1039,7 @@ export default function DashboardPage() {
                 يحتاج مراجعة
               </label>
             </div>
-            <div className="button-row">
+            <div className="button-row-saveEdit">
               <button
                 type="button"
                 className="btn-gold"

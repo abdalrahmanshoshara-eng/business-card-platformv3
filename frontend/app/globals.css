@@ -268,6 +268,7 @@ button:disabled { opacity: .58; cursor: wait; }
 .btn-gold:hover:not(:disabled), .download.gold:hover, button.gold:hover:not(:disabled), .btn.gold:hover { background: linear-gradient(135deg, var(--gold-hover), #e8d0a0); color: var(--green-deep); }
 .actions { display: flex;justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px;  width:49%;}
 .button-row { display: flex;justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px;  width:100%;}
+.button-row-saveEdit { display: flex;justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px;  width:100%;}
 .button-row2 { display: flex;justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 18px;  }
 .status { color: var(--text-soft); min-height: 24px; font-size: 14px; margin-top: 12px; font-weight: 800; }
 .status-box { padding: 13px 15px; border-radius: 14px; background: rgba(199,166,107,.12); border: 1px solid var(--gold-border); color: var(--text-muted); }
