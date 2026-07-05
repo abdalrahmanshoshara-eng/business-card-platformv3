@@ -456,7 +456,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className="card">
+      <section className="card-details">
         <div className="section-head">
           <h2>عدد الشركات حسب التخصص</h2>
           {activeCategory && (
@@ -581,9 +581,7 @@ export default function DashboardPage() {
             </select>
           </label>
         </div>
-        <p className="natural-search-hint">
-          أمثلة: "عرضلي شركات المياه"، "اعرض شركات الكهرباء"، "الشركات التركية"، "بدي الشركات في دمشق"، "بدون إيميل"، "تحتاج مراجعة".
-        </p>
+        
         <div className="button-row">
           <button
             type="button"
