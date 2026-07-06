@@ -15,15 +15,32 @@ export default function ManualAddPage() {
   const [investmentType, setInvestmentType] = useState<string>('');
   const [investmentTypeOther, setInvestmentTypeOther] = useState<string>('');
 
+  function splitMultiValue(value: string) {
+    return value
+      .split(/[|\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStatus({ type: 'idle' });
     const form = e.currentTarget;
     const fd = new FormData();
-    const fields = ['person_name','person_name_ar','person_name_en','job_title','job_title_ar','job_title_en','company_name','company_name_ar','company_name_en','mobile_numbers','emails','website','address','company_activity','raw_text'];
+    const fields = ['person_name','person_name_ar','person_name_en','job_title','job_title_ar','job_title_en','company_name','company_name_ar','company_name_en','website','address','company_activity','raw_text'];
     for (const name of fields) {
       const el = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
       if (el && el.value) fd.append(name, el.value);
+    }
+    const mobileField = form.elements.namedItem('mobile_numbers') as HTMLInputElement | null;
+    const emailField = form.elements.namedItem('emails') as HTMLInputElement | null;
+    const mobileNumbers = mobileField ? splitMultiValue(mobileField.value) : [];
+    const emails = emailField ? splitMultiValue(emailField.value) : [];
+    if (mobileNumbers.length) {
+      fd.append('mobile_numbers', JSON.stringify(mobileNumbers));
+    }
+    if (emails.length) {
+      fd.append('emails', JSON.stringify(emails));
     }
     // ensure investment type values come from React state
     fd.append('investment_type', investmentType || '');
