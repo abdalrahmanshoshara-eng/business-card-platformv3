@@ -2,7 +2,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import BusinessCard
-from .services.card_data import prepare_card_data
+from .services.card_data import merge_missing_card_data, prepare_card_data
 from .services.natural_search import derive_category, normalize_arabic, parse_natural_query
 
 
@@ -240,3 +240,70 @@ class BusinessCardUpdateApiTests(TestCase):
         self.assertEqual(card.job_title, '')
         self.assertEqual(card.job_title_ar, '')
         self.assertEqual(card.job_title_en, '')
+
+
+class DuplicateMergeTests(TestCase):
+    def test_duplicate_attempt_fills_missing_existing_fields_only(self):
+        card = make_card(
+            person_name='Existing Person',
+            person_name_ar='Existing Person',
+            company_name='Existing Co',
+            emails=['old@example.com'],
+            mobile_numbers=[],
+            website='',
+            address='',
+            company_activity='',
+        )
+        new_data = prepare_card_data(
+            {
+                'person_name': 'Different OCR Name',
+                'person_name_ar': 'Different OCR Name',
+                'company_name': 'Existing Co',
+                'emails': ['old@example.com', 'new@example.com'],
+                'mobile_numbers': ['+963 944 123 456'],
+                'website': 'example.com',
+                'address': 'Damascus',
+                'company_activity': 'Consulting',
+                'confidence': 0.82,
+            },
+            infer_missing_investment=False,
+        )
+
+        updated_fields = merge_missing_card_data(card, new_data)
+
+        card.refresh_from_db()
+        self.assertIn('mobile_numbers', updated_fields)
+        self.assertIn('website', updated_fields)
+        self.assertEqual(card.person_name, 'Existing Person')
+        self.assertEqual(card.emails, ['old@example.com', 'new@example.com'])
+        self.assertEqual(card.website, 'https://example.com')
+        self.assertEqual(card.address, 'Damascus')
+        self.assertEqual(card.company_activity, 'Consulting')
+        self.assertEqual(card.confidence, 0.82)
+
+    def test_duplicate_merge_does_not_replace_base_name_when_language_fields_are_blank(self):
+        card = make_card(
+            person_name='Existing Person',
+            company_name='Existing Co',
+            emails=['old@example.com'],
+        )
+        card.person_name_ar = ''
+        card.person_name_en = ''
+        card.save(update_fields=['person_name_ar', 'person_name_en'])
+        new_data = prepare_card_data(
+            {
+                'person_name': 'Different OCR Name',
+                'company_name': 'Existing Co',
+                'emails': ['old@example.com'],
+                'website': 'example.com',
+            },
+            infer_missing_investment=False,
+        )
+
+        updated_fields = merge_missing_card_data(card, new_data)
+
+        card.refresh_from_db()
+        self.assertIn('website', updated_fields)
+        self.assertEqual(card.person_name, 'Existing Person')
+        self.assertEqual(card.person_name_ar, '')
+        self.assertEqual(card.person_name_en, '')

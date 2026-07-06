@@ -8,7 +8,9 @@ import { BusinessCard, combineBilingual, fetchJson } from '@/lib/api';
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
 type DuplicateResponse = {
   duplicate: true;
-  saved: false;
+  saved: boolean;
+  updated?: boolean;
+  updated_fields?: string[];
   reason?: string;
   existing_card?: BusinessCard;
   extracted_data?: Partial<BusinessCard>;
@@ -83,9 +85,12 @@ export default function UploadPage() {
       if (data.duplicate) {
         setDuplicate(data);
         markStep('save', ['upload', 'extract', 'duplicate']);
+        const duplicateMessage = data.updated
+          ? `الكرت موجود سابقًا، وتم ترميم المعلومات الناقصة في السجل المحفوظ. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`
+          : `الكرت موجود سابقًا ولا توجد معلومات ناقصة لترميمها. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`;
         setStatus({
-          type: 'error',
-          text: `الكرت موجود سابقًا ولن يتم تكراره. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`,
+          type: data.updated ? 'success' : 'error',
+          text: duplicateMessage,
         });
         return;
       }

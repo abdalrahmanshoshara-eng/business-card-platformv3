@@ -34,6 +34,84 @@ def combine_bilingual(arabic: str, english: str, fallback: str = '') -> str:
     return (fallback or '').strip()
 
 
+MERGEABLE_TEXT_FIELDS = [
+    'person_name_ar',
+    'person_name_en',
+    'job_title_ar',
+    'job_title_en',
+    'company_name_ar',
+    'company_name_en',
+    'website',
+    'address',
+    'company_activity',
+    'investment_type',
+    'investment_type_other',
+    'raw_text',
+    'review_notes',
+    'website_visit_note',
+]
+
+BILINGUAL_BASE_FIELDS = {
+    'person_name_ar': 'person_name',
+    'person_name_en': 'person_name',
+    'job_title_ar': 'job_title',
+    'job_title_en': 'job_title',
+    'company_name_ar': 'company_name',
+    'company_name_en': 'company_name',
+}
+
+
+def _is_blank(value) -> bool:
+    if isinstance(value, str):
+        return not value.strip()
+    return value in (None, [], {})
+
+
+def merge_missing_card_data(existing, new_data: dict) -> list[str]:
+    """Fill only missing fields on an existing card from a duplicate attempt."""
+    updated_fields: set[str] = set()
+
+    for field in ('mobile_numbers', 'emails'):
+        merged = clean_list([*(getattr(existing, field) or []), *(new_data.get(field) or [])])
+        if merged != (getattr(existing, field) or []):
+            setattr(existing, field, merged)
+            updated_fields.add(field)
+
+    for field in MERGEABLE_TEXT_FIELDS:
+        current_value = getattr(existing, field)
+        incoming_value = new_data.get(field)
+        base_field = BILINGUAL_BASE_FIELDS.get(field)
+        if (
+            base_field
+            and not _is_blank(getattr(existing, base_field))
+            and not getattr(existing, f'{base_field}_ar')
+            and not getattr(existing, f'{base_field}_en')
+        ):
+            continue
+        if _is_blank(current_value) and not _is_blank(incoming_value):
+            setattr(existing, field, incoming_value)
+            updated_fields.add(field)
+
+    if (existing.confidence or 0) <= 0 and (new_data.get('confidence') or 0) > 0:
+        existing.confidence = new_data['confidence']
+        updated_fields.add('confidence')
+
+    recomputed_names = {
+        'person_name': combine_bilingual(existing.person_name_ar, existing.person_name_en, existing.person_name),
+        'job_title': combine_bilingual(existing.job_title_ar, existing.job_title_en, existing.job_title),
+        'company_name': combine_bilingual(existing.company_name_ar, existing.company_name_en, existing.company_name),
+    }
+    for field, value in recomputed_names.items():
+        if getattr(existing, field) != value:
+            setattr(existing, field, value)
+            updated_fields.add(field)
+
+    if updated_fields:
+        existing.save(update_fields=[*sorted(updated_fields), 'updated_at'])
+
+    return sorted(updated_fields)
+
+
 def prepare_card_data(
     data: dict,
     *,
