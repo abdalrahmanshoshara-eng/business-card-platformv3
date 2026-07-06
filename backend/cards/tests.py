@@ -246,6 +246,32 @@ class BusinessCardUpdateApiTests(TestCase):
         self.assertEqual(card.job_title_en, '')
 
 
+class BusinessCardCreateDuplicateApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.card_data = {
+            'person_name': 'Duplicate Person',
+            'company_name': 'Duplicate Co',
+            'company_activity': 'شركة خدمات',
+            'investment_type': 'غير ذلك',
+            'investment_type_other': 'نوع خاص',
+            'address': 'شارع الاختبار',
+            'emails': ['dup@example.com'],
+            'mobile_numbers': ['+966500000000'],
+            'raw_text': 'Duplicate card',
+            'status': 'new',
+        }
+        BusinessCard.objects.create(**prepare_card_data(self.card_data, infer_missing_investment=False))
+
+    def test_duplicate_create_returns_200_and_existing_card(self):
+        response = self.client.post('/api/cards/', self.card_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data.get('duplicate'))
+        self.assertIn('existing_card', response.data)
+        self.assertEqual(response.data['existing_card']['company_name'], 'Duplicate Co')
+        self.assertEqual(response.data['existing_card']['emails'], ['dup@example.com'])
+
+
 class DuplicateMergeTests(TestCase):
     def test_duplicate_attempt_fills_missing_existing_fields_only(self):
         card = make_card(

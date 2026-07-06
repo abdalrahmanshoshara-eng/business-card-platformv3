@@ -6,7 +6,7 @@ import re
 import tempfile
 import time
 
-from django.db import DatabaseError
+from django.db import DatabaseError, IntegrityError
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -42,6 +42,68 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
     queryset = BusinessCard.objects.all().order_by('-sequence_number', '-id')
     serializer_class = BusinessCardSerializer
     pagination_class = BusinessCardPagination
+
+    def _find_existing_duplicate(self, data: dict):
+        if not data.get('duplicate_hash'):
+            return None
+
+        existing = BusinessCard.objects.filter(duplicate_hash=data['duplicate_hash']).first()
+        if existing:
+            return existing
+
+        for email in data.get('emails', []):
+            existing = BusinessCard.objects.filter(emails__icontains=email).first()
+            if existing:
+                return existing
+
+        for phone in data.get('mobile_numbers', []):
+            digits = ''.join(char for char in phone if char.isdigit())
+            if digits:
+                existing = BusinessCard.objects.filter(mobile_numbers__icontains=digits[-8:]).first()
+                if existing:
+                    return existing
+
+        return None
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = _prepare_data(serializer.validated_data)
+
+        existing = self._find_existing_duplicate(data)
+        if existing:
+            updated_fields = merge_missing_card_data(existing, data)
+            updated_fields.extend(
+                merge_missing_card_images(existing, request.FILES.get('front'), request.FILES.get('back'))
+            )
+            return Response({
+                'duplicate': True,
+                'saved': bool(updated_fields),
+                'updated': bool(updated_fields),
+                'updated_fields': sorted(updated_fields),
+                'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
+            }, status=status.HTTP_200_OK)
+
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            existing = self._find_existing_duplicate(data)
+            if existing:
+                updated_fields = merge_missing_card_data(existing, data)
+                updated_fields.extend(
+                    merge_missing_card_images(existing, request.FILES.get('front'), request.FILES.get('back'))
+                )
+                return Response({
+                    'duplicate': True,
+                    'saved': bool(updated_fields),
+                    'updated': bool(updated_fields),
+                    'updated_fields': sorted(updated_fields),
+                    'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
+                }, status=status.HTTP_200_OK)
+            raise
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def get_queryset(self):
         qs = BusinessCard.objects.all()

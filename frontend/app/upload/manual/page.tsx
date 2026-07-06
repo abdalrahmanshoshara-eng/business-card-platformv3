@@ -52,9 +52,22 @@ export default function ManualAddPage() {
 
     setLoading(true);
     try {
-      const data = await fetchJson<{ card: BusinessCard }>('/cards', { method: 'POST', body: fd });
-      setSaved(data.card);
-      setStatus({ type: 'success', text: `تم حفظ الكرت كسجل رقم ${data.card.sequence_number}` });
+      const data = await fetchJson<{ card?: BusinessCard; duplicate?: boolean; existing_card?: BusinessCard; updated?: boolean }>('/cards', { method: 'POST', body: fd });
+      if (data.duplicate) {
+        const existingCard = data.existing_card;
+        setSaved(existingCard || null);
+        setStatus({
+          type: 'success',
+          text: data.updated
+            ? `تم تحديث الكرت الموجود (#${existingCard?.sequence_number}).`
+            : `تم العثور على كرت مطابق بالفعل (#${existingCard?.sequence_number}).`,
+        });
+      } else if (data.card) {
+        setSaved(data.card);
+        setStatus({ type: 'success', text: `تم حفظ الكرت كسجل رقم ${data.card.sequence_number}` });
+      } else {
+        setStatus({ type: 'error', text: 'الاستجابة من الخادم غير صحيحة.' });
+      }
       form.reset();
     } catch (err: any) {
       setStatus({ type: 'error', text: err.message || 'فشل الحفظ' });
