@@ -217,8 +217,8 @@ function CategoryChip({
       disabled={isUnknown}
       title={
         isUnknown
-          ? "لا يوجد نشاط محدد لهذه السجلات"
-          : `عرض الشركات الخاصة بـ ${item.category}`
+          ? "لا يوجد نوع استثمار محدد لهذه السجلات"
+          : `عرض الشركات التابعة لـ ${item.category}`
       }
     >
       <span>{item.category}</span>
@@ -246,7 +246,6 @@ export default function DashboardPage() {
   const [totalResults, setTotalResults] = useState(0);
   const [stats, setStats] = useState<Stats | null>(null);
   const [categoryStats, setCategoryStats] = useState<CategoryStat[]>([]);
-  const [activeCategory, setActiveCategory] = useState("");
   const [categoryFilterText, setCategoryFilterText] = useState("");
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -267,9 +266,8 @@ export default function DashboardPage() {
     if (investmentType.trim())
       params.set("investment_type", investmentType.trim());
     if (needsReview) params.set("needs_review", needsReview);
-    if (activeCategory) params.set("category", activeCategory);
     return params.toString();
-  }, [q, company, activity, investmentType, needsReview, activeCategory]);
+  }, [q, company, activity, investmentType, needsReview]);
 
   const requestQuery = useMemo(() => {
     const params = new URLSearchParams(filterQuery);
@@ -326,7 +324,7 @@ export default function DashboardPage() {
 
   async function loadCategoryStats() {
     try {
-      const data = await fetchJson<CategoryStat[]>("/cards/stats-by-category/");
+      const data = await fetchJson<CategoryStat[]>("/cards/stats-by-category/?field=investment_type");
       setCategoryStats(data || []);
     } catch {
       // Non-critical: the categories panel simply stays empty on failure.
@@ -337,7 +335,7 @@ export default function DashboardPage() {
     if (category === "غير محدد") return;
     setPage(1);
     setQ("");
-    setActiveCategory((current) => (current === category ? "" : category));
+    setInvestmentType((current) => (current === category ? "" : category));
   }
 
   async function confirmDelete() {
@@ -458,17 +456,17 @@ export default function DashboardPage() {
 
       <section className="card-details">
         <div className="section-head">
-          <h2>عدد الشركات حسب التخصص</h2>
-          {activeCategory && (
+          <h2>عدد الشركات حسب نوع الاستثمار</h2>
+          {investmentType && (
             <button
               type="button"
               className="btn-small"
               onClick={() => {
                 setPage(1);
-                setActiveCategory("");
+                setInvestmentType("");
               }}
             >
-              إلغاء فلتر "{activeCategory}" ✕
+              إلغاء فلتر "{investmentType}" ✕
             </button>
           )}
         </div>
@@ -479,7 +477,7 @@ export default function DashboardPage() {
                 <CategoryChip
                   key={item.category}
                   item={item}
-                  isActive={activeCategory === item.category}
+                  isActive={investmentType === item.category}
                   onClick={() => applyCategoryFilter(item.category)}
                 />
               ))}
@@ -491,8 +489,8 @@ export default function DashboardPage() {
                 onClick={() => setShowAllCategories((current) => !current)}
               >
                 {showAllCategories
-                  ? "إخفاء باقي التخصصات"
-                  : `عرض كل التخصصات (${categoryStats.length})`}
+                  ? "إخفاء باقي أنواع الاستثمار"
+                  : `عرض كل أنواع الاستثمار (${categoryStats.length})`}
               </button>
             )}
             {showAllCategories && (
@@ -501,19 +499,19 @@ export default function DashboardPage() {
                   className="category-search-input"
                   value={categoryFilterText}
                   onChange={(event) => setCategoryFilterText(event.target.value)}
-                  placeholder="ابحث عن تخصص ضمن القائمة الكاملة..."
+                  placeholder="ابحث عن نوع استثمار ضمن القائمة الكاملة..."
                 />
                 <div className="category-stats category-stats-scroll">
                   {filteredCategoryStats.map((item) => (
                     <CategoryChip
                       key={item.category}
                       item={item}
-                      isActive={activeCategory === item.category}
+                      isActive={investmentType === item.category}
                       onClick={() => applyCategoryFilter(item.category)}
                     />
                   ))}
                   {!filteredCategoryStats.length && (
-                    <p className="helper-text">لا يوجد تخصص مطابق لبحثك.</p>
+                    <p className="helper-text">لا يوجد نوع استثمار مطابق لبحثك.</p>
                   )}
                 </div>
               </div>
@@ -534,7 +532,6 @@ export default function DashboardPage() {
               onChange={(event) => {
                 setPage(1);
                 setQ(event.target.value);
-                if (activeCategory) setActiveCategory("");
               }}
               placeholder="مثال: عرضلي شركات المياه، الشركات التركية، بدون إيميل..."
             />
@@ -601,10 +598,9 @@ export default function DashboardPage() {
               setActivity("");
               setInvestmentType("");
               setNeedsReview("");
-              setActiveCategory("");
             }}
           >
-            مسح البحث
+           حذف الفلترة
           </button>
           <button
             type="button"

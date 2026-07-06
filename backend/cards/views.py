@@ -199,8 +199,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
           الإنشاءات..." or "نشاط غير محدد"), so it is bucketed down to its
           leading segment to keep the panel compact instead of showing one
           row per company.
-        - field=investment_type: the institutional investment_type choice
-          (using investment_type_other when the type is "غير ذلك").
+        - field=investment_type: the institutional investment_type choice,
+          grouping custom values under "غير ذلك".
 
         Counting prefers distinct company_name values within a category so
         the same company imported on multiple cards isn't counted twice;
@@ -214,10 +214,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         buckets: dict[str, dict] = {}
         for card in qs:
             if field == 'investment_type':
-                if card.investment_type == 'غير ذلك' and card.investment_type_other.strip():
-                    category = card.investment_type_other.strip()
-                else:
-                    category = (card.investment_type or '').strip() or 'غير محدد'
+                category = (card.investment_type or '').strip() or 'غير محدد'
             else:
                 category = derive_category(card.company_activity)
 

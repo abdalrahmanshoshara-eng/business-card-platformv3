@@ -169,6 +169,28 @@ class NaturalSearchApiTests(TestCase):
         # "اتصالات - مجال الأمن السيبراني" is bucketed under "اتصالات".
         self.assertIn('اتصالات', categories)
 
+    def test_stats_by_investment_type_groups_other_choice(self):
+        make_card(
+            company_name='Cotton One',
+            investment_type='مؤسسة الحلج و الاقطان',
+        )
+        make_card(
+            company_name='Cotton One',
+            investment_type='مؤسسة الحلج و الاقطان',
+        )
+        make_card(
+            company_name='Custom Investment',
+            investment_type='غير ذلك',
+            investment_type_other='تصنيف خاص',
+        )
+
+        response = self.client.get('/api/cards/stats-by-category/', {'field': 'investment_type'})
+        self.assertEqual(response.status_code, 200)
+        categories = {item['category']: item['count'] for item in response.data}
+        self.assertEqual(categories['مؤسسة الحلج و الاقطان'], 1)
+        self.assertEqual(categories['غير ذلك'], 1)
+        self.assertNotIn('تصنيف خاص', categories)
+
     def test_category_filter_matches_bucket_not_substring(self):
         response = self.client.get('/api/cards/', {'category': 'اتصالات'})
         self.assertEqual(response.status_code, 200)
