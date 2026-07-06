@@ -13,3 +13,5 @@ openpyxl==3.1.5
 gunicorn==21.2.0
 whitenoise==6.7.0
 psycopg2-binary==2.9.9
+numpy==2.2.1
+opencv-python-headless==4.10.0.84

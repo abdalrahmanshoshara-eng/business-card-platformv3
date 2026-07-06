@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import logging
 import re
 import tempfile
+import time
 
+from django.db import DatabaseError
 from django.db.models import Q
 from django.http import HttpResponse
 from openpyxl import Workbook
@@ -15,11 +18,14 @@ from rest_framework.response import Response
 
 from .models import BusinessCard
 from .serializers import BusinessCardSerializer
-from .services.extractor import extract_business_card
+from .services.extractor import ExtractionError, extract_business_card
 from .services.image_processing import preprocess_image
 from .services.normalization import duplicate_reason
 from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
 from .services.natural_search import apply_natural_search, derive_category, parse_natural_query
+
+logger = logging.getLogger(__name__)
+
 
 def _prepare_data(data: dict) -> dict:
     return prepare_card_data(data)
@@ -98,8 +104,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         data = prepare_card_data(current, touched_fields=set(serializer.validated_data))
         serializer.save(**data)
 
-    @action(detail=False, methods=['post'], url_path='extract')
-    def extract(self, request):
+    def _extract_legacy_unused(self, request):
         front = request.FILES.get('front')
         back = request.FILES.get('back')
         if not front:
@@ -177,6 +182,135 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             front_image=front,
             back_image=back if back else None,
         )
+        return Response({
+            'duplicate': False,
+            'saved': True,
+            'card': BusinessCardSerializer(card, context={'request': request}).data,
+            'message': f'تم حفظ الكرت كسجل رقم {card.sequence_number}',
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='extract')
+    def extract(self, request):
+        endpoint_started = time.perf_counter()
+        front = request.FILES.get('front')
+        back = request.FILES.get('back')
+        if not front:
+            return Response({'detail': 'يجب رفع صورة الوجه الأمامي.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            preprocessing_started = time.perf_counter()
+            try:
+                front_path = os.path.join(tmpdir, front.name or 'front.jpg')
+                with open(front_path, 'wb') as file_handle:
+                    for chunk in front.chunks():
+                        file_handle.write(chunk)
+                front_processed = preprocess_image(front_path)
+
+                back_processed = None
+                if back:
+                    back_path = os.path.join(tmpdir, back.name or 'back.jpg')
+                    with open(back_path, 'wb') as file_handle:
+                        for chunk in back.chunks():
+                            file_handle.write(chunk)
+                    back_processed = preprocess_image(back_path)
+            except Exception:
+                logger.exception('card_preprocessing_failed')
+                return Response(
+                    {'detail': 'تعذرت معالجة صورة الكرت. يرجى تجربة صورة أوضح أو أصغر.', 'error_type': 'preprocessing_failed'},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
+
+            logger.info(
+                'card_preprocessing_done elapsed_ms=%d front_bytes=%s back_bytes=%s',
+                int((time.perf_counter() - preprocessing_started) * 1000),
+                os.path.getsize(front_processed) if front_processed else None,
+                os.path.getsize(back_processed) if back_processed else None,
+            )
+
+            extraction_started = time.perf_counter()
+            try:
+                extracted = extract_business_card(front_processed, back_processed).model_dump()
+            except ExtractionError as exc:
+                logger.warning(
+                    'card_extraction_failed category=%s status=%s elapsed_ms=%d error=%s',
+                    exc.category,
+                    exc.status_code,
+                    int((time.perf_counter() - extraction_started) * 1000),
+                    exc,
+                )
+                return Response({'detail': str(exc), 'error_type': exc.category}, status=exc.status_code)
+            except Exception as exc:
+                msg = str(exc)
+                logger.exception('card_extraction_unhandled elapsed_ms=%d', int((time.perf_counter() - extraction_started) * 1000))
+                if '429' in msg or 'RESOURCE_EXHAUSTED' in msg:
+                    retry_seconds = None
+                    m = re.search(r'retry[^\d]*(\d+(?:\.\d+)?)\s*s', msg, re.I)
+                    if m:
+                        retry_seconds = int(float(m.group(1))) + 1
+                    detail = 'تم تجاوز حد Gemini أو معدل الطلبات.'
+                    if retry_seconds:
+                        detail += f' يرجى الانتظار {retry_seconds} ثانية ثم المحاولة مجدداً.'
+                    return Response({'detail': detail, 'error_type': 'gemini_quota'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+                return Response(
+                    {'detail': 'فشل استخراج البيانات من Gemini. يرجى المحاولة مجدداً.', 'error_type': 'gemini_failed'},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+        prepared = _prepare_data(extracted)
+        existing = BusinessCard.objects.filter(duplicate_hash=prepared['duplicate_hash']).first()
+        if not existing:
+            for email in prepared.get('emails', []):
+                existing = BusinessCard.objects.filter(emails__icontains=email).first()
+                if existing:
+                    break
+        if not existing:
+            for phone in prepared.get('mobile_numbers', []):
+                digits = ''.join(char for char in phone if char.isdigit())
+                if digits:
+                    existing = BusinessCard.objects.filter(mobile_numbers__icontains=digits[-8:]).first()
+                    if existing:
+                        break
+
+        if existing:
+            updated_fields = [
+                *merge_missing_card_data(existing, prepared),
+                *merge_missing_card_images(existing, front, back),
+            ]
+            logger.info(
+                'card_duplicate_handled elapsed_ms=%d existing_id=%s updated_fields=%s',
+                int((time.perf_counter() - endpoint_started) * 1000),
+                existing.id,
+                updated_fields,
+            )
+            return Response({
+                'duplicate': True,
+                'saved': bool(updated_fields),
+                'updated': bool(updated_fields),
+                'updated_fields': updated_fields,
+                'reason': duplicate_reason(prepared, existing),
+                'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
+                'extracted_data': extracted,
+            }, status=status.HTTP_200_OK)
+
+        front.seek(0)
+        if back:
+            back.seek(0)
+
+        try:
+            card = BusinessCard.objects.create(
+                **prepared,
+                status='needs_review' if prepared.get('needs_review') else 'new',
+                front_image=front,
+                back_image=back if back else None,
+            )
+        except DatabaseError:
+            logger.exception('card_save_failed')
+            return Response(
+                {'detail': 'تعذر حفظ بيانات الكرت في قاعدة البيانات.', 'error_type': 'save_failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        logger.info('card_extract_endpoint_done elapsed_ms=%d card_id=%s', int((time.perf_counter() - endpoint_started) * 1000), card.id)
         return Response({
             'duplicate': False,
             'saved': True,
