@@ -112,6 +112,24 @@ def merge_missing_card_data(existing, new_data: dict) -> list[str]:
     return sorted(updated_fields)
 
 
+def merge_missing_card_images(existing, front_image=None, back_image=None) -> list[str]:
+    """Attach newly uploaded images only where the existing duplicate lacks them."""
+    updated_fields: list[str] = []
+
+    for field, uploaded in (('front_image', front_image), ('back_image', back_image)):
+        if getattr(existing, field) or not uploaded:
+            continue
+        uploaded.seek(0)
+        filename = getattr(uploaded, 'name', '') or f'{field}.jpg'
+        getattr(existing, field).save(filename, uploaded, save=False)
+        updated_fields.append(field)
+
+    if updated_fields:
+        existing.save(update_fields=[*updated_fields, 'updated_at'])
+
+    return updated_fields
+
+
 def prepare_card_data(
     data: dict,
     *,

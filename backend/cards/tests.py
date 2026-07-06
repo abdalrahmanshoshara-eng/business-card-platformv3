@@ -1,8 +1,12 @@
+import tempfile
+
 from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from .models import BusinessCard
-from .services.card_data import merge_missing_card_data, prepare_card_data
+from .services.card_data import merge_missing_card_data, merge_missing_card_images, prepare_card_data
 from .services.natural_search import derive_category, normalize_arabic, parse_natural_query
 
 
@@ -307,3 +311,24 @@ class DuplicateMergeTests(TestCase):
         self.assertEqual(card.person_name, 'Existing Person')
         self.assertEqual(card.person_name_ar, '')
         self.assertEqual(card.person_name_en, '')
+
+    @override_settings(MEDIA_ROOT=tempfile.gettempdir())
+    def test_duplicate_merge_fills_missing_images_without_replacing_existing_images(self):
+        card = make_card(emails=['old@example.com'])
+        card.front_image.save(
+            'existing-front.jpg',
+            SimpleUploadedFile('existing-front.jpg', b'existing-front', content_type='image/jpeg'),
+            save=True,
+        )
+        existing_front_name = card.front_image.name
+
+        updated_fields = merge_missing_card_images(
+            card,
+            SimpleUploadedFile('new-front.jpg', b'new-front', content_type='image/jpeg'),
+            SimpleUploadedFile('new-back.jpg', b'new-back', content_type='image/jpeg'),
+        )
+
+        card.refresh_from_db()
+        self.assertEqual(updated_fields, ['back_image'])
+        self.assertEqual(card.front_image.name, existing_front_name)
+        self.assertTrue(card.back_image.name.endswith('new-back.jpg'))

@@ -18,7 +18,7 @@ from .serializers import BusinessCardSerializer
 from .services.extractor import extract_business_card
 from .services.image_processing import preprocess_image
 from .services.normalization import duplicate_reason
-from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, prepare_card_data
+from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
 from .services.natural_search import apply_natural_search, derive_category, parse_natural_query
 
 def _prepare_data(data: dict) -> dict:
@@ -153,7 +153,10 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                         break
 
         if existing:
-            updated_fields = merge_missing_card_data(existing, prepared)
+            updated_fields = [
+                *merge_missing_card_data(existing, prepared),
+                *merge_missing_card_images(existing, front, back),
+            ]
             return Response({
                 'duplicate': True,
                 'saved': bool(updated_fields),

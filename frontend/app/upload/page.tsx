@@ -86,8 +86,8 @@ export default function UploadPage() {
         setDuplicate(data);
         markStep('save', ['upload', 'extract', 'duplicate']);
         const duplicateMessage = data.updated
-          ? `الكرت موجود سابقًا، وتم ترميم المعلومات الناقصة في السجل المحفوظ. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`
-          : `الكرت موجود سابقًا ولا توجد معلومات ناقصة لترميمها. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`;
+          ? `الكرت موجود سابقًا، وتم ترميم المعلومات أو الصور الناقصة في السجل المحفوظ. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`
+          : `الكرت موجود سابقًا ولا توجد معلومات أو صور ناقصة لترميمها. السبب: ${data.reason || 'مطابقة مع سجل محفوظ'}`;
         setStatus({
           type: data.updated ? 'success' : 'error',
           text: duplicateMessage,
