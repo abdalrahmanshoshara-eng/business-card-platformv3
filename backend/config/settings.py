@@ -4,7 +4,9 @@ import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / '.env', override=True)
+# Load .env but allow skipping via environment variable (used by run_checks to avoid DB overrides)
+if not os.getenv('SKIP_LOAD_ENV'):
+    load_dotenv(BASE_DIR / '.env', override=False)
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
 DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
@@ -90,5 +92,12 @@ REST_FRAMEWORK = {
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
 ENABLE_WEBSITE_ENRICHMENT = os.getenv('ENABLE_WEBSITE_ENRICHMENT', 'true').lower() == 'true'
+GEMINI_API_KEYS = [k.strip() for k in os.getenv('GEMINI_API_KEYS', '').split(',') if k.strip()]
+if not GEMINI_API_KEYS and GEMINI_API_KEY:
+    # preserve backward compatibility when only single key is provided
+    GEMINI_API_KEYS = [GEMINI_API_KEY]
+
+# How many alternate API keys to try on transient failures (max additional keys)
+GEMINI_KEY_FAILOVER_LIMIT = int(os.getenv('GEMINI_KEY_FAILOVER_LIMIT', '1'))
 
 APPEND_SLASH = False

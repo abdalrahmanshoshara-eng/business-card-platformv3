@@ -288,12 +288,13 @@ a {
 
 .section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 18px;
   flex-direction: column;
+  align-content: flex-start;
 }
 
 .section-head h2 {
@@ -468,6 +469,27 @@ button.gold:hover:not(:disabled),
 .btn.gold:hover {
   background: linear-gradient(135deg, var(--gold-hover), #e8d0a0);
   color: var(--green-deep);
+}
+
+/* Secondary variant that keeps the same sizing and spacing as primary buttons */
+.btn.secondary,
+.btn.secondary.btn-gold,
+.btn-gold.secondary {
+  background: var(--cream-card);
+  color: var(--green-header);
+  border-color: var(--border-strong);
+  box-shadow: none;
+  padding: 13px 24px;
+  min-height: 46px;
+  font-weight: 900;
+}
+
+.btn.secondary:hover:not(:disabled),
+.btn-gold.secondary:hover {
+  background: rgba(199, 166, 107, .12);
+  color: var(--green-header);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(8, 61, 53, .12);
 }
 
 .actions {

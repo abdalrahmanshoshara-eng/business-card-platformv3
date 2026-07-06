@@ -150,52 +150,104 @@ def _error_text(exc: Exception) -> str:
 
 def _classify_exception(exc: Exception) -> tuple[str, int, str]:
     text = _error_text(exc).lower()
-    if 'api_key' in text or 'api key' in text or 'permission' in text or 'unauthenticated' in text:
-        return 'gemini_auth', 502, 'Gemini API key is invalid or not allowed.'
+    # invalid API key / authentication
+    if 'api_key' in text or 'api key' in text or 'permission' in text or 'unauthenticated' in text or 'invalid' in text:
+        return 'gemini_invalid_api_key', 502, 'Gemini API key is invalid or not allowed.'
+    # timeout/deadline
     if 'timeout' in text or 'deadline' in text:
         return 'gemini_timeout', 504, 'Gemini request timed out.'
-    if 'resource_exhausted' in text or '429' in text or 'quota' in text:
-        return 'gemini_quota', 429, 'Gemini quota or rate limit was exceeded.'
+    # explicit rate limit / 429 / resource exhausted
+    if 'resource_exhausted' in text or '429' in text or 'rate limit' in text:
+        return 'gemini_rate_limit', 429, 'Gemini rate limit or quota was exceeded.'
+    if 'quota' in text:
+        return 'gemini_quota_exceeded', 429, 'Gemini quota was exceeded.'
+    # location or failed precondition errors
     if 'failed_precondition' in text or 'location' in text:
-        return 'gemini_precondition', 502, 'Gemini rejected the request because of account, location, or model restrictions.'
+        return 'gemini_location_not_supported', 502, 'Gemini rejected the request due to account or location restrictions.'
+    # parsing / invalid JSON
+    if 'did not return json' in text or isinstance(exc, ValueError) and 'json' in text:
+        return 'extraction_parse_error', 502, 'Gemini returned invalid or unparsable output.'
+    # transient network/service issues
     if any(token in text for token in ('connection reset', 'socket hang up', '502', '500', '503', '504')):
         return 'gemini_transient', 502, 'Gemini service or network failed temporarily.'
-    return 'gemini', 502, 'Gemini extraction failed.'
+    return 'unknown_extraction_error', 502, 'Gemini extraction failed.'
 
 
-def _call_gemini(image_paths: list[str | Path], user_instruction: str) -> BusinessCardData:
+def _call_gemini(image_paths: list[str | Path], user_instruction: str, context: dict | None = None) -> BusinessCardData:
     contents: list[object] = [user_instruction]
     contents.extend(_open_image(path) for path in image_paths)
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    started = time.perf_counter()
-    response = client.models.generate_content(
-        model=settings.GEMINI_MODEL,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0,
-            response_mime_type='application/json',
-        ),
-    )
-    logger.info('gemini_request_success images=%d elapsed_ms=%d', len(image_paths), int((time.perf_counter() - started) * 1000))
-    return BusinessCardData.model_validate(_sanitize_extracted_payload(_extract_json(getattr(response, 'text', '') or '')))
-
-
-def _extract_with_fallback(front_image: str | Path, back_image: str | Path | None) -> tuple[BusinessCardData, str]:
-    images = [front_image, *([back_image] if back_image else [])]
-    try:
-        return _call_gemini(images, 'Extract contact information from the front/back business-card images. Return JSON only.'), 'single-shot'
-    except Exception as exc:
-        logger.warning('gemini_single_shot_failed category=%s error=%s', _classify_exception(exc)[0], _error_text(exc))
-        if not back_image:
+    # Try configured GEMINI_API_KEYS with a small failover limit for transient errors.
+    keys = getattr(settings, 'GEMINI_API_KEYS', []) or []
+    failover_limit = getattr(settings, 'GEMINI_KEY_FAILOVER_LIMIT', 1)
+    # initialize context
+    if context is None:
+        context = {'requests_made': 0, 'max_requests': 3}
+    last_exc: Exception | None = None
+    attempts = 0
+    # Limit keys tried to at most failover_limit + 1
+    for idx, key in enumerate(keys[: max(1, failover_limit + 1) ]):
+        # enforce global per-extraction request cap
+        if context.get('requests_made', 0) >= context.get('max_requests', 3):
+            raise ExtractionError('Gemini request limit for this card reached.', category='gemini_rate_limit', status_code=429)
+        attempts += 1
+        client = genai.Client(api_key=key)
+        started = time.perf_counter()
+        try:
+            response = client.models.generate_content(
+                model=settings.GEMINI_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0,
+                    response_mime_type='application/json',
+                ),
+            )
+            context['requests_made'] = context.get('requests_made', 0) + 1
+            logger.info('gemini_request_success images=%d elapsed_ms=%d attempt=%d requests_made=%d', len(image_paths), int((time.perf_counter() - started) * 1000), attempts, context['requests_made'])
+            return BusinessCardData.model_validate(_sanitize_extracted_payload(_extract_json(getattr(response, 'text', '') or '')))
+        except Exception as exc:
+            context['requests_made'] = context.get('requests_made', 0) + 1
+            last_exc = exc
             category, code, message = _classify_exception(exc)
+            logger.warning('gemini_request_failed attempt=%d category=%s error=%s requests_made=%d', attempts, category, _error_text(exc), context['requests_made'])
+            # do not failover for non-recoverable errors
+            if category in {'gemini_rate_limit', 'gemini_quota_exceeded', 'gemini_location_not_supported', 'gemini_invalid_api_key'}:
+                raise ExtractionError(message, category=category, status_code=code, original=exc) from exc
+            # otherwise try next key (if available) up to failover_limit
+            continue
+
+    # If we exhausted keys or none configured, raise last exception transformed
+    if last_exc is not None:
+        category, code, message = _classify_exception(last_exc)
+        raise ExtractionError(message, category=category, status_code=code, original=last_exc) from last_exc
+    raise ExtractionError('No Gemini API keys configured.', category='gemini_invalid_api_key', status_code=502)
+
+
+def _extract_with_fallback(front_image: str | Path, back_image: str | Path | None, context: dict | None = None) -> tuple[BusinessCardData, str]:
+    images = [front_image, *([back_image] if back_image else [])]
+    if context is None:
+        context = {'requests_made': 0, 'max_requests': 3}
+    try:
+        return _call_gemini(images, 'Extract contact information from the front/back business-card images. Return JSON only.', context=context), 'single-shot'
+    except ExtractionError:
+        # propagate ExtractionError as-is
+        raise
+    except Exception as exc:
+        category, code, message = _classify_exception(exc)
+        logger.warning('gemini_single_shot_failed category=%s error=%s', category, _error_text(exc))
+        # If no back image provided, do not attempt fallback on non-recoverable errors
+        non_recoverable = {'gemini_rate_limit', 'gemini_quota_exceeded', 'gemini_location_not_supported', 'gemini_invalid_api_key'}
+        if category in non_recoverable:
+            raise ExtractionError(message, category=category, status_code=code, original=exc) from exc
+        if not back_image:
+            # No back image to fallback to; propagate as extraction error
             raise ExtractionError(message, category=category, status_code=code, original=exc) from exc
 
     results: list[BusinessCardData] = []
     failures: list[Exception] = []
     for label, path in (('front', front_image), ('back', back_image)):
         try:
-            results.append(_call_gemini([path], f'Extract contact information from the {label} side of this business card. Return JSON only.'))
+            results.append(_call_gemini([path], f'Extract contact information from the {label} side of this business card. Return JSON only.', context=context))
         except Exception as exc:
             failures.append(exc)
             logger.warning('gemini_fallback_side_failed side=%s category=%s error=%s', label, _classify_exception(exc)[0], _error_text(exc))
@@ -378,11 +430,18 @@ def _finalize(parsed: BusinessCardData) -> BusinessCardData:
 
 
 def extract_business_card(front_image: str | Path, back_image: str | Path | None = None) -> BusinessCardData:
-    if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY.startswith('your_'):
-        raise ExtractionError('GEMINI_API_KEY is missing or still set to a placeholder.', category='gemini_auth', status_code=502)
+    keys = getattr(settings, 'GEMINI_API_KEYS', []) or []
+    if not keys:
+        # Backwards compatible: check single key variable
+        single = getattr(settings, 'GEMINI_API_KEY', '')
+        if not single or single.startswith('your_'):
+            raise ExtractionError('No Gemini API keys configured.', category='gemini_invalid_api_key', status_code=502)
+        keys = [single]
 
     started = time.perf_counter()
-    parsed, strategy = _extract_with_fallback(front_image, back_image)
+    # per-extraction context to limit total Gemini requests (default max 3)
+    context = {'requests_made': 0, 'max_requests': int(getattr(settings, 'GEMINI_MAX_REQUESTS_PER_CARD', 3))}
+    parsed, strategy = _extract_with_fallback(front_image, back_image, context=context)
     qr_payloads = _decode_qr_images([front_image, *([back_image] if back_image else [])])
     if qr_payloads:
         parsed = _merge_qr(parsed, _qr_payloads_to_data(qr_payloads))

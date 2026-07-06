@@ -60,6 +60,12 @@ export default function UploadPage() {
       setStatus({ type: 'error', text: 'يجب اختيار صورة الوجه الأمامي أولًا.' });
       return;
     }
+      // basic client-side file size validation (6MB limit)
+      const MAX_FILE_BYTES = 6 * 1024 * 1024;
+      if (front.size && front.size > MAX_FILE_BYTES) {
+        setStatus({ type: 'error', text: 'حجم صورة الوجه الأمامي كبير جدًا. الرجاء اختيار ملف أقل من 6 ميغابايت.' });
+        return;
+      }
 
     const fd = new FormData();
     fd.append('front', front);
@@ -197,6 +203,9 @@ export default function UploadPage() {
             <button type="submit" className="btn-gold" disabled={loading}>
               {loading ? 'جاري المعالجة...' : 'استخراج وحفظ'}
             </button>
+            <Link href="/upload/manual" className="btn btn-gold secondary" aria-label="رفع كرت يدويا">
+              رفع كرت يدوياً
+            </Link>
             <button
               type="button"
               disabled={loading}

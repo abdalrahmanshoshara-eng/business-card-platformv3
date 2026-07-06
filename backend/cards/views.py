@@ -216,7 +216,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             except Exception:
                 logger.exception('card_preprocessing_failed')
                 return Response(
-                    {'detail': 'تعذرت معالجة صورة الكرت. يرجى تجربة صورة أوضح أو أصغر.', 'error_type': 'preprocessing_failed'},
+                    {'detail': 'تعذرت معالجة صورة الكرت. يرجى تجربة صورة أوضح أو أصغر.', 'error_type': 'preprocessing_error'},
                     status=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 )
 
@@ -250,11 +250,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                     detail = 'تم تجاوز حد Gemini أو معدل الطلبات.'
                     if retry_seconds:
                         detail += f' يرجى الانتظار {retry_seconds} ثانية ثم المحاولة مجدداً.'
-                    return Response({'detail': detail, 'error_type': 'gemini_quota'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
-                return Response(
-                    {'detail': 'فشل استخراج البيانات من Gemini. يرجى المحاولة مجدداً.', 'error_type': 'gemini_failed'},
-                    status=status.HTTP_502_BAD_GATEWAY,
-                )
+                    return Response({'detail': detail, 'error_type': 'gemini_quota_exceeded'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+                return Response({'detail': 'فشل استخراج البيانات من Gemini. يرجى المحاولة مجدداً.', 'error_type': 'unknown_extraction_error'}, status=status.HTTP_502_BAD_GATEWAY)
 
         prepared = _prepare_data(extracted)
         existing = BusinessCard.objects.filter(duplicate_hash=prepared['duplicate_hash']).first()
@@ -306,7 +303,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         except DatabaseError:
             logger.exception('card_save_failed')
             return Response(
-                {'detail': 'تعذر حفظ بيانات الكرت في قاعدة البيانات.', 'error_type': 'save_failed'},
+                {'detail': 'تعذر حفظ بيانات الكرت في قاعدة البيانات.', 'error_type': 'database_save_error'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 

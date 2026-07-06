@@ -9,6 +9,7 @@ import {
   fetchJson,
   toMediaUrl,
 } from "@/lib/api";
+import { INVESTMENT_TYPES } from "@/lib/constants";
 
 type Stats = {
   total: number;
@@ -34,19 +35,7 @@ const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 type SortOrder = "newest" | "oldest";
 
-const INVESTMENT_TYPES = [
-  "مؤسسة الحلج و الاقطان",
-  "المؤسسة العامة للصناعات الهندسية",
-  "المؤسسة العامة للصناعات النسيجية",
-  "المؤسسة العامة للصناعات الكيميائية",
-  "مؤسسة الصناعات الغذائية",
-  "المؤسسة العامة للتبغ",
-  "هيئة ادارة المعادن النبيلة وهيئة المواصفات و المقاييس",
-  "مديرية المدن و المناطق الصناعية",
-  "مديرية الاشراف على التاهيل الفني",
-  "مركز الاختبارات و الابحاث",
-  "غير ذلك",
-];
+
 
 type EditableCard = {
   person_name: string;
