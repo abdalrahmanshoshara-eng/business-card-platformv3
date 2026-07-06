@@ -166,7 +166,7 @@ def infer_company_activity(company_name: str, website: str, page_text: str = '',
     deterministic = _keyword_activity(page_text, card_text)
     if deterministic:
         return deterministic
-    if not settings.GEMINI_API_KEY:
+    if not getattr(settings, 'ALLOW_GEMINI_WEBSITE_CLASSIFICATION', False):
         return ''
 
     prompt = f"""
@@ -179,7 +179,7 @@ def infer_company_activity(company_name: str, website: str, page_text: str = '',
 نص الكرت: {card_text[:3000] if card_text else 'غير متاح'}
 """
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=(getattr(settings, 'GEMINI_API_KEYS', []) or [getattr(settings, 'GEMINI_API_KEY', '')])[0])
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,
@@ -199,7 +199,7 @@ def infer_investment_type(company_name: str, company_activity: str = '', page_te
         if any(keyword.lower() in combined for keyword in keywords):
             return investment_type, ''
 
-    if not settings.GEMINI_API_KEY:
+    if not getattr(settings, 'ALLOW_GEMINI_WEBSITE_CLASSIFICATION', False):
         return 'غير ذلك', ''
 
     choices = '\n'.join(f'- {choice}' for choice, _ in INVESTMENT_TYPE_KEYWORDS)
@@ -216,7 +216,7 @@ def infer_investment_type(company_name: str, company_activity: str = '', page_te
 نص الكرت: {card_text[:3000] if card_text else 'غير متاح'}
 """
     try:
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        client = genai.Client(api_key=(getattr(settings, 'GEMINI_API_KEYS', []) or [getattr(settings, 'GEMINI_API_KEY', '')])[0])
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
             contents=prompt,

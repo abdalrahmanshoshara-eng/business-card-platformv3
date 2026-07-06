@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import IntegrityError, models
 from django.utils import timezone
 
 
@@ -46,10 +46,28 @@ class BusinessCard(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        if not self.sequence_number:
-            last = BusinessCard.objects.order_by('-sequence_number').first()
-            self.sequence_number = (last.sequence_number + 1) if last else 1
-        super().save(*args, **kwargs)
+        if self.sequence_number:
+            super().save(*args, **kwargs)
+            return
+
+        # Gunicorn can handle two create requests at the same time. Compute the
+        # next sequence number with a small retry loop so a unique collision on
+        # sequence_number does not become a random 500 for the user.
+        for attempt in range(5):
+            last_number = (
+                BusinessCard.objects.order_by('-sequence_number')
+                .values_list('sequence_number', flat=True)
+                .first()
+            )
+            self.sequence_number = (last_number or 0) + 1
+            try:
+                super().save(*args, **kwargs)
+                return
+            except IntegrityError:
+                if attempt >= 4:
+                    raise
+                self.sequence_number = None
+
 
     def __str__(self):
         return f"#{self.sequence_number} {self.person_name or self.company_name or 'Business Card'}"

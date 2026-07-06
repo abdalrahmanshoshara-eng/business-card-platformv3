@@ -226,3 +226,71 @@ docker compose up --build -d
 docker compose exec backend python manage.py import_cards_excel /app/imports/cards.xlsx --dry-run
 docker compose exec backend python manage.py import_cards_excel /app/imports/cards.xlsx --clear
 ```
+
+## إصلاحات Production Debugging - Gemini والإضافة اليدوية
+
+### Gemini API keys
+
+يدعم backend الآن طريقتين:
+
+```env
+GEMINI_API_KEY=put-your-key-here
+GEMINI_API_KEYS=put-key-1-here,put-key-2-here,put-key-3-here
+```
+
+إذا كانت `GEMINI_API_KEYS` غير فارغة فسيستخدمها النظام كقائمة مفصولة بفواصل، مع تجاهل الفراغات والقيم الفارغة. إذا لم تكن موجودة، يستخدم `GEMINI_API_KEY` القديم للحفاظ على التوافق.
+
+تمت إضافة مدير مفاتيح بسيط داخل `cards/services/gemini_keys.py`:
+
+- لا يطبع أي مفتاح في السجلات.
+- يسجل فقط `selected_key_index` وسبب الفشل.
+- يعطل المفتاح غير الصالح خلال عمر عملية Gunicorn.
+- يضع المفتاح الذي وصل rate limit/quota في cooldown مؤقت.
+- لا يجرب المفتاح نفسه أكثر من مرة داخل نفس محاولة Gemini.
+- يوقف العملية برسالة واضحة إذا لم يبق أي مفتاح صالح أو متاح.
+
+### سياسة استهلاك Gemini
+
+- الوضع الطبيعي: طلب Gemini واحد للكرت، يرسل front و back معاً.
+- fallback: يستخدم فقط عند timeout أو socket/connection reset أو parsing/invalid JSON أو خطأ خارجي قابل للاسترداد.
+- لا يوجد fallback عند quota/rate limit أو invalid key أو location not supported.
+- الحد الأقصى الافتراضي: `GEMINI_MAX_REQUESTS_PER_CARD=3`.
+- `ALLOW_GEMINI_WEBSITE_CLASSIFICATION=false` افتراضياً لمنع طلبات Gemini إضافية لتصنيف الموقع.
+
+### الإضافة اليدوية
+
+`POST /api/cards` يعمل الآن بدون صور وبدون Gemini API key. كما يقبل:
+
+- `mobile_numbers` و `emails` كـ JSON array أو نص مفصول بـ `|` أو comma أو أسطر.
+- `website` بصيغة `example.com` ويحوّلها إلى `https://example.com`.
+- الصور بأسماء `front` و `back` من الواجهة.
+
+عند وجود كرت مشابه قوي، يرجع backend:
+
+```json
+{
+  "detail": "يوجد كرت مشابه بنفس البريد أو رقم الهاتف أو نفس بيانات الشركة/الشخص.",
+  "error_type": "duplicate_card",
+  "duplicate_conflict": true,
+  "duplicate_candidates": []
+}
+```
+
+وتعرض الواجهة تحذيراً مع زر "حفظ رغم التكرار".
+
+### أوامر التحقق
+
+```bash
+cd backend
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py migrate
+```
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs backend --tail=100
+docker compose logs frontend --tail=100
+```

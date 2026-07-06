@@ -4,7 +4,7 @@ import logging
 import time
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageFilter, ImageOps, ImageStat
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,10 @@ def _pil_fallback(input_path: Path, output_path: Path) -> dict:
     if longest > MAX_LONG_EDGE:
         scale = MAX_LONG_EDGE / longest
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.Resampling.LANCZOS)
-    img = ImageOps.autocontrast(img, cutoff=1)
-    img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=45, threshold=4))
+    gray_mean = ImageStat.Stat(img.convert('L')).mean[0]
+    if gray_mean < 105:
+        img = ImageOps.autocontrast(img, cutoff=1)
+    img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=30, threshold=5))
     img.save(output_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
     return {
         'original_size': original_size,
@@ -78,6 +80,29 @@ def _detect_card_quad(image):
     return _order_points(points), False
 
 
+def _quad_is_safe(image, quad) -> bool:
+    import cv2
+    import numpy as np
+
+    height, width = image.shape[:2]
+    area = abs(cv2.contourArea(np.asarray(quad, dtype='float32')))
+    image_area = float(width * height)
+    if image_area <= 0:
+        return False
+    area_ratio = area / image_area
+    if area_ratio < 0.12 or area_ratio > 0.92:
+        return False
+
+    rect = _order_points(quad)
+    tl, tr, br, bl = rect
+    card_width = max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl))
+    card_height = max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl))
+    if card_width < 450 or card_height < 250:
+        return False
+    ratio = max(card_width, card_height) / max(1.0, min(card_width, card_height))
+    return 1.25 <= ratio <= 2.35
+
+
 def _warp_card(image, quad):
     import cv2
     import numpy as np
@@ -107,10 +132,8 @@ def _enhance(image):
     lightness, a, b = cv2.split(lab)
     dark_card = lightness.mean() < 105
     if dark_card:
-        clahe = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8))
+        clahe = cv2.createCLAHE(clipLimit=1.35, tileGridSize=(8, 8))
         lightness = clahe.apply(lightness)
-    else:
-        lightness = cv2.normalize(lightness, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
     enhanced = cv2.merge((lightness, a, b))
     enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
     return enhanced, dark_card
@@ -133,11 +156,11 @@ def preprocess_image(input_path: str | Path) -> Path:
         quad, strict_quad = _detect_card_quad(image)
         card_detected = quad is not None
         perspective_corrected = False
-        if quad is not None:
+        if quad is not None and strict_quad and _quad_is_safe(image, quad):
             warped = _warp_card(image, quad)
-            if warped.size:
+            if warped.size and max(warped.shape[:2]) >= min(1200, max(image.shape[:2])):
                 image = warped
-                perspective_corrected = strict_quad
+                perspective_corrected = True
 
         image, dark_card = _enhance(image)
         height, width = image.shape[:2]
@@ -148,7 +171,7 @@ def preprocess_image(input_path: str | Path) -> Path:
 
         final_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(final_rgb)
-        img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=35, threshold=5))
+        img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=25, threshold=5))
         img.save(output_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
         metadata = {
             'original_size': original_size,

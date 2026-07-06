@@ -30,6 +30,20 @@ export type BusinessCard = {
   created_at: string;
 };
 
+export class ApiError extends Error {
+  status: number;
+  errorType?: string;
+  data: any;
+
+  constructor(message: string, status: number, data: any = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.errorType = data?.error_type;
+    this.data = data;
+  }
+}
+
 export function toMediaUrl(url?: string) {
   if (!url) return '';
   if (url.startsWith('/media/')) return url;
@@ -59,6 +73,30 @@ function apiUrl(path: string) {
   return `${base}${normalizeApiPath(path)}`;
 }
 
+function formatApiError(data: any, fallback: string) {
+  if (!data) return fallback;
+  if (typeof data === 'string') return data || fallback;
+  if (data.detail) return String(data.detail);
+  if (data.message) return String(data.message);
+  if (data.errors && typeof data.errors === 'object') {
+    const fieldMessages = Object.entries(data.errors).map(([field, value]) => {
+      if (Array.isArray(value)) return `${field}: ${value.join(' ')}`;
+      if (value && typeof value === 'object') return `${field}: ${JSON.stringify(value)}`;
+      return `${field}: ${String(value)}`;
+    });
+    if (fieldMessages.length) return fieldMessages.join('؛ ');
+  }
+  if (typeof data === 'object') {
+    const fieldMessages = Object.entries(data).map(([field, value]) => {
+      if (Array.isArray(value)) return `${field}: ${value.join(' ')}`;
+      if (typeof value === 'string') return `${field}: ${value}`;
+      return '';
+    }).filter(Boolean);
+    if (fieldMessages.length) return fieldMessages.join('؛ ');
+  }
+  return fallback;
+}
+
 export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), {
     ...options,
@@ -68,6 +106,8 @@ export async function fetchJson<T>(path: string, options?: RequestInit): Promise
   const text = await res.text();
   let data: any = {};
   try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
-  if (!res.ok) throw new Error(data.detail || data.message || 'Request failed');
+  if (!res.ok) {
+    throw new ApiError(formatApiError(data, 'فشل تنفيذ الطلب.'), res.status, data);
+  }
   return data as T;
 }

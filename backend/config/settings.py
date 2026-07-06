@@ -10,7 +10,11 @@ if not os.getenv('SKIP_LOAD_ENV'):
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
 DEBUG = os.getenv('DEBUG', 'true').lower() == 'true'
-ALLOWED_HOSTS = [x.strip() for x in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') if x.strip()]
+ALLOWED_HOSTS = [x.strip() for x in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,0.0.0.0').split(',') if x.strip()]
+if DEBUG:
+    for host in ['testserver', '172.20.3.94']:
+        if host not in ALLOWED_HOSTS:
+            ALLOWED_HOSTS.append(host)
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -89,15 +93,15 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
 }
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
+GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip() or 'gemini-2.5-flash'
 ENABLE_WEBSITE_ENRICHMENT = os.getenv('ENABLE_WEBSITE_ENRICHMENT', 'true').lower() == 'true'
+ALLOW_GEMINI_WEBSITE_CLASSIFICATION = os.getenv('ALLOW_GEMINI_WEBSITE_CLASSIFICATION', 'false').lower() == 'true'
 GEMINI_API_KEYS = [k.strip() for k in os.getenv('GEMINI_API_KEYS', '').split(',') if k.strip()]
 if not GEMINI_API_KEYS and GEMINI_API_KEY:
-    # preserve backward compatibility when only single key is provided
+    # Backward compatibility with old single-key deployments.
     GEMINI_API_KEYS = [GEMINI_API_KEY]
-
-# How many alternate API keys to try on transient failures (max additional keys)
-GEMINI_KEY_FAILOVER_LIMIT = int(os.getenv('GEMINI_KEY_FAILOVER_LIMIT', '1'))
+GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60'))
+GEMINI_MAX_REQUESTS_PER_CARD = int(os.getenv('GEMINI_MAX_REQUESTS_PER_CARD', '3'))
 
 APPEND_SLASH = False

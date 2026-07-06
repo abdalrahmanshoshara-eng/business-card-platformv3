@@ -5,6 +5,7 @@ import logging
 import re
 import tempfile
 import time
+import uuid
 
 from django.db import DatabaseError, IntegrityError
 from django.db.models import Q
@@ -20,11 +21,122 @@ from .models import BusinessCard
 from .serializers import BusinessCardSerializer
 from .services.extractor import ExtractionError, extract_business_card
 from .services.image_processing import preprocess_image
-from .services.normalization import duplicate_reason
+from .services.normalization import duplicate_reason, normalize_text
 from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
 from .services.natural_search import apply_natural_search, derive_category, parse_natural_query
 
 logger = logging.getLogger(__name__)
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'on'}
+
+
+def _duplicate_candidate_payload(card: BusinessCard, reason: str, score: int) -> dict:
+    return {
+        'id': card.id,
+        'sequence_number': card.sequence_number,
+        'person_name': card.person_name,
+        'company_name': card.company_name,
+        'mobile_numbers': card.mobile_numbers or [],
+        'emails': card.emails or [],
+        'website': card.website,
+        'reason': reason,
+        'score': score,
+    }
+
+
+def _score_duplicate(data: dict, existing: BusinessCard) -> tuple[int, str]:
+    if data.get('duplicate_hash') and data.get('duplicate_hash') == existing.duplicate_hash:
+        return 100, 'نفس بصمة التكرار'
+
+    new_emails = {normalize_text(item) for item in data.get('emails', []) if item}
+    old_emails = {normalize_text(item) for item in existing.emails or [] if item}
+    if new_emails and old_emails and new_emails & old_emails:
+        return 100, 'نفس البريد الإلكتروني'
+
+    new_phones = {re.sub(r'\D+', '', item) for item in data.get('mobile_numbers', []) if item}
+    old_phones = {re.sub(r'\D+', '', item) for item in existing.mobile_numbers or [] if item}
+    for new_phone in new_phones:
+        for old_phone in old_phones:
+            if new_phone and old_phone and (new_phone == old_phone or new_phone[-8:] == old_phone[-8:]):
+                return 95, 'نفس رقم الهاتف'
+
+    new_website = normalize_text(data.get('website'))
+    old_website = normalize_text(existing.website)
+    new_person = normalize_text(data.get('person_name') or data.get('person_name_ar') or data.get('person_name_en'))
+    old_person = normalize_text(existing.person_name or existing.person_name_ar or existing.person_name_en)
+    new_company = normalize_text(data.get('company_name') or data.get('company_name_ar') or data.get('company_name_en'))
+    old_company = normalize_text(existing.company_name or existing.company_name_ar or existing.company_name_en)
+
+    if new_website and old_website and new_website == old_website and new_person and old_person and new_person == old_person:
+        return 90, 'نفس الموقع واسم الشخص'
+    if new_company and old_company and new_company == old_company and new_person and old_person and new_person == old_person:
+        return 88, 'نفس الشركة واسم الشخص'
+    if new_website and old_website and new_website == old_website and new_company and old_company and new_company == old_company:
+        return 86, 'نفس الموقع والشركة'
+    if new_company and old_company and new_company == old_company and (new_website or new_emails or new_phones):
+        return 70, 'اسم الشركة مطابق مع بيانات اتصال مختلفة أو ناقصة'
+    return 0, ''
+
+
+def _find_duplicate_candidates(data: dict, *, limit: int = 5) -> list[dict]:
+    query = Q()
+    if data.get('duplicate_hash'):
+        query |= Q(duplicate_hash=data['duplicate_hash'])
+    for email in data.get('emails', []) or []:
+        if email:
+            query |= Q(emails__icontains=str(email).strip().lower())
+    for phone in data.get('mobile_numbers', []) or []:
+        digits = re.sub(r'\D+', '', str(phone))
+        if len(digits) >= 8:
+            query |= Q(mobile_numbers__icontains=digits[-8:])
+    website_lookup = re.sub(r'^https?://', '', str(data.get('website') or ''), flags=re.I)
+    website_lookup = re.sub(r'^www\.', '', website_lookup).split('/')[0].strip().lower()
+    if website_lookup:
+        query |= Q(website__icontains=website_lookup[:120])
+    company = (data.get('company_name') or data.get('company_name_ar') or data.get('company_name_en') or '').strip()
+    person = (data.get('person_name') or data.get('person_name_ar') or data.get('person_name_en') or '').strip()
+    if company:
+        query |= Q(company_name__icontains=company) | Q(company_name_ar__icontains=company) | Q(company_name_en__icontains=company)
+    if person:
+        query |= Q(person_name__icontains=person) | Q(person_name_ar__icontains=person) | Q(person_name_en__icontains=person)
+
+    if not query:
+        return []
+
+    scored: list[dict] = []
+    for card in BusinessCard.objects.filter(query).distinct().order_by('-sequence_number')[:50]:
+        score, reason = _score_duplicate(data, card)
+        if score >= 60:
+            scored.append(_duplicate_candidate_payload(card, reason, score))
+    scored.sort(key=lambda item: item['score'], reverse=True)
+    return scored[:limit]
+
+
+def _salt_duplicate_hash(data: dict) -> dict:
+    copy = dict(data)
+    base = copy.get('duplicate_hash') or uuid.uuid4().hex
+    copy['duplicate_hash'] = f'{base[:64]}:{uuid.uuid4().hex}'[:128]
+    return copy
+
+
+def _validation_error_response(exc) -> Response:
+    detail = getattr(exc, 'detail', None)
+    if isinstance(detail, dict):
+        messages = []
+        for field, errors in detail.items():
+            if isinstance(errors, (list, tuple)):
+                joined = ' '.join(str(error) for error in errors)
+            else:
+                joined = str(errors)
+            messages.append(f'{field}: {joined}')
+        message = '؛ '.join(messages) or 'بيانات غير صالحة.'
+    else:
+        message = str(detail or 'بيانات غير صالحة.')
+    return Response({'detail': message, 'error_type': 'validation_error', 'errors': detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _prepare_data(data: dict) -> dict:
@@ -44,66 +156,92 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
     pagination_class = BusinessCardPagination
 
     def _find_existing_duplicate(self, data: dict):
-        if not data.get('duplicate_hash'):
+        candidates = _find_duplicate_candidates(data, limit=1)
+        if not candidates or candidates[0]['score'] < 80:
             return None
-
-        existing = BusinessCard.objects.filter(duplicate_hash=data['duplicate_hash']).first()
-        if existing:
-            return existing
-
-        for email in data.get('emails', []):
-            existing = BusinessCard.objects.filter(emails__icontains=email).first()
-            if existing:
-                return existing
-
-        for phone in data.get('mobile_numbers', []):
-            digits = ''.join(char for char in phone if char.isdigit())
-            if digits:
-                existing = BusinessCard.objects.filter(mobile_numbers__icontains=digits[-8:]).first()
-                if existing:
-                    return existing
-
-        return None
+        return BusinessCard.objects.filter(id=candidates[0]['id']).first()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = _prepare_data(serializer.validated_data)
-
-        existing = self._find_existing_duplicate(data)
-        if existing:
-            updated_fields = merge_missing_card_data(existing, data)
-            updated_fields.extend(
-                merge_missing_card_images(existing, request.FILES.get('front'), request.FILES.get('back'))
+        if not serializer.is_valid():
+            logger.warning('manual_card_validation_failed errors=%s', serializer.errors)
+            return Response(
+                {
+                    'detail': 'تعذر حفظ الكرت بسبب بيانات غير صالحة. يرجى مراجعة الحقول.',
+                    'error_type': 'validation_error',
+                    'errors': serializer.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            return Response({
-                'duplicate': True,
-                'saved': bool(updated_fields),
-                'updated': bool(updated_fields),
-                'updated_fields': sorted(updated_fields),
-                'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
-            }, status=status.HTTP_200_OK)
+
+        validated = dict(serializer.validated_data)
+        front = request.FILES.get('front') or request.FILES.get('front_image') or validated.pop('front_image', None)
+        back = request.FILES.get('back') or request.FILES.get('back_image') or validated.pop('back_image', None)
+        data = _prepare_data(validated)
+        confirm_duplicate = _truthy(request.data.get('confirm_duplicate') or request.data.get('force_create'))
+
+        candidates = _find_duplicate_candidates(data)
+        strong_candidates = [candidate for candidate in candidates if candidate['score'] >= 80]
+        if strong_candidates and not confirm_duplicate:
+            logger.info('manual_card_duplicate_detected candidates=%s', len(strong_candidates))
+            return Response(
+                {
+                    'detail': 'يوجد كرت مشابه بنفس البريد أو رقم الهاتف أو نفس بيانات الشركة/الشخص.',
+                    'error_type': 'duplicate_card',
+                    'duplicate_conflict': True,
+                    'duplicate_candidates': strong_candidates,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if strong_candidates and confirm_duplicate:
+            data = _salt_duplicate_hash(data)
+            logger.info('manual_card_duplicate_confirmed candidates=%s', len(strong_candidates))
+
+        save_kwargs = dict(data)
+        if front is not None:
+            save_kwargs['front_image'] = front
+        if back is not None:
+            save_kwargs['back_image'] = back
 
         try:
-            self.perform_create(serializer)
+            card = serializer.save(**save_kwargs)
         except IntegrityError:
-            existing = self._find_existing_duplicate(data)
-            if existing:
-                updated_fields = merge_missing_card_data(existing, data)
-                updated_fields.extend(
-                    merge_missing_card_images(existing, request.FILES.get('front'), request.FILES.get('back'))
+            logger.exception('manual_card_integrity_error')
+            candidates = _find_duplicate_candidates(data)
+            if candidates and not confirm_duplicate:
+                return Response(
+                    {
+                        'detail': 'يوجد كرت مشابه بنفس البريد أو رقم الهاتف.',
+                        'error_type': 'duplicate_card',
+                        'duplicate_conflict': True,
+                        'duplicate_candidates': candidates,
+                    },
+                    status=status.HTTP_409_CONFLICT,
                 )
-                return Response({
-                    'duplicate': True,
-                    'saved': bool(updated_fields),
-                    'updated': bool(updated_fields),
-                    'updated_fields': sorted(updated_fields),
-                    'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
-                }, status=status.HTTP_200_OK)
-            raise
+            return Response(
+                {'detail': 'تعذر حفظ الكرت بسبب تعارض في قاعدة البيانات. يرجى المحاولة مرة أخرى.', 'error_type': 'database_integrity_error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except DatabaseError:
+            logger.exception('manual_card_database_error')
+            return Response(
+                {'detail': 'تعذر حفظ بيانات الكرت في قاعدة البيانات.', 'error_type': 'database_save_error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        logger.info('manual_card_created card_id=%s duplicate_candidates=%s', card.id, len(candidates))
+        headers = self.get_success_headers(BusinessCardSerializer(card, context={'request': request}).data)
+        return Response(
+            {
+                'duplicate': False,
+                'saved': True,
+                'card': BusinessCardSerializer(card, context={'request': request}).data,
+                'message': f'تم حفظ الكرت كسجل رقم {card.sequence_number}',
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
 
     def get_queryset(self):
         qs = BusinessCard.objects.all()
@@ -153,7 +291,10 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         return qs.order_by('-sequence_number', '-id')
 
     def perform_create(self, serializer):
-        data = _prepare_data(serializer.validated_data)
+        validated = dict(serializer.validated_data)
+        validated.pop('front_image', None)
+        validated.pop('back_image', None)
+        data = _prepare_data(validated)
         serializer.save(**data)
 
     def perform_update(self, serializer):
@@ -162,11 +303,14 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             for field in BusinessCard._meta.fields
             if field.name not in {'id', 'sequence_number', 'created_at', 'updated_at', 'front_image', 'back_image'}
         }
-        current.update(serializer.validated_data)
-        data = prepare_card_data(current, touched_fields=set(serializer.validated_data))
+        validated = dict(serializer.validated_data)
+        front_direct = validated.pop('front_image', None)
+        back_direct = validated.pop('back_image', None)
+        current.update(validated)
+        data = prepare_card_data(current, touched_fields=set(validated))
         # Allow uploaded front/back files to replace existing images when editing
-        front = self.request.FILES.get('front')
-        back = self.request.FILES.get('back')
+        front = self.request.FILES.get('front') or front_direct
+        back = self.request.FILES.get('back') or back_direct
         save_kwargs = dict(data)
         if front is not None:
             save_kwargs['front_image'] = front
@@ -302,13 +446,20 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 extracted = extract_business_card(front_processed, back_processed).model_dump()
             except ExtractionError as exc:
                 logger.warning(
-                    'card_extraction_failed category=%s status=%s elapsed_ms=%d error=%s',
+                    'card_extraction_failed category=%s status=%s recoverable=%s elapsed_ms=%d',
                     exc.category,
                     exc.status_code,
+                    getattr(exc, 'recoverable', True),
                     int((time.perf_counter() - extraction_started) * 1000),
-                    exc,
                 )
-                return Response({'detail': str(exc), 'error_type': exc.category}, status=exc.status_code)
+                return Response(
+                    {
+                        'detail': str(exc),
+                        'error_type': exc.category,
+                        'recoverable': getattr(exc, 'recoverable', True),
+                    },
+                    status=exc.status_code,
+                )
             except Exception as exc:
                 msg = str(exc)
                 logger.exception('card_extraction_unhandled elapsed_ms=%d', int((time.perf_counter() - extraction_started) * 1000))
@@ -369,6 +520,27 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status='needs_review' if prepared.get('needs_review') else 'new',
                 front_image=front,
                 back_image=back if back else None,
+            )
+        except IntegrityError:
+            logger.exception('card_save_integrity_failed')
+            existing = self._find_existing_duplicate(prepared)
+            if existing:
+                updated_fields = [
+                    *merge_missing_card_data(existing, prepared),
+                    *merge_missing_card_images(existing, front, back),
+                ]
+                return Response({
+                    'duplicate': True,
+                    'saved': bool(updated_fields),
+                    'updated': bool(updated_fields),
+                    'updated_fields': updated_fields,
+                    'reason': duplicate_reason(prepared, existing),
+                    'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
+                    'extracted_data': extracted,
+                }, status=status.HTTP_200_OK)
+            return Response(
+                {'detail': 'تعذر حفظ الكرت بسبب تعارض في قاعدة البيانات. يرجى المحاولة مرة أخرى.', 'error_type': 'database_integrity_error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         except DatabaseError:
             logger.exception('card_save_failed')
