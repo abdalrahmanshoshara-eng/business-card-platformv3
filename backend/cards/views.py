@@ -164,7 +164,15 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         }
         current.update(serializer.validated_data)
         data = prepare_card_data(current, touched_fields=set(serializer.validated_data))
-        serializer.save(**data)
+        # Allow uploaded front/back files to replace existing images when editing
+        front = self.request.FILES.get('front')
+        back = self.request.FILES.get('back')
+        save_kwargs = dict(data)
+        if front is not None:
+            save_kwargs['front_image'] = front
+        if back is not None:
+            save_kwargs['back_image'] = back
+        serializer.save(**save_kwargs)
 
     def _extract_legacy_unused(self, request):
         front = request.FILES.get('front')
