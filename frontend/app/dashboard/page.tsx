@@ -242,6 +242,8 @@ export default function DashboardPage() {
   const [imageCard, setImageCard] = useState<BusinessCard | null>(null);
   const [editCard, setEditCard] = useState<BusinessCard | null>(null);
   const [editForm, setEditForm] = useState<EditableCard | null>(null);
+  const [editFrontFile, setEditFrontFile] = useState<File | null>(null);
+  const [editBackFile, setEditBackFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [imageError, setImageError] = useState("");
   const [deleteCard, setDeleteCard] = useState<BusinessCard | null>(null);
@@ -355,32 +357,59 @@ export default function DashboardPage() {
     setSaving(true);
     setError("");
     try {
-      const updated = await fetchJson<BusinessCard>(`/cards/${editCard.id}/`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          person_name: editForm.person_name,
-          job_title: editForm.job_title,
-          company_name: editForm.company_name,
-          mobile_numbers: splitMultiValue(editForm.mobile_numbers_text),
-          emails: splitMultiValue(editForm.emails_text),
-          website: editForm.website,
-          address: editForm.address,
-          company_activity: editForm.company_activity,
-          investment_type: editForm.investment_type,
-          investment_type_other:
-            editForm.investment_type === "غير ذلك"
-              ? editForm.investment_type_other
-              : "",
-          needs_review: editForm.needs_review,
-          review_notes: editForm.review_notes,
-        }),
-      });
+      let updated: BusinessCard;
+      // If user supplied new front/back files, send multipart/form-data
+      if (editFrontFile || editBackFile) {
+        const fd = new FormData();
+        fd.append('person_name', editForm.person_name);
+        fd.append('job_title', editForm.job_title);
+        fd.append('company_name', editForm.company_name);
+        fd.append('mobile_numbers', JSON.stringify(splitMultiValue(editForm.mobile_numbers_text)));
+        fd.append('emails', JSON.stringify(splitMultiValue(editForm.emails_text)));
+        fd.append('website', editForm.website || '');
+        fd.append('address', editForm.address || '');
+        fd.append('company_activity', editForm.company_activity || '');
+        fd.append('investment_type', editForm.investment_type || '');
+        fd.append('investment_type_other', editForm.investment_type === 'غير ذلك' ? (editForm.investment_type_other || '') : '');
+        fd.append('needs_review', String(editForm.needs_review));
+        fd.append('review_notes', editForm.review_notes || '');
+        if (editFrontFile) fd.append('front', editFrontFile);
+        if (editBackFile) fd.append('back', editBackFile);
+
+        updated = await fetchJson<BusinessCard>(`/cards/${editCard.id}/`, {
+          method: 'PATCH',
+          body: fd,
+        });
+      } else {
+        updated = await fetchJson<BusinessCard>(`/cards/${editCard.id}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            person_name: editForm.person_name,
+            job_title: editForm.job_title,
+            company_name: editForm.company_name,
+            mobile_numbers: splitMultiValue(editForm.mobile_numbers_text),
+            emails: splitMultiValue(editForm.emails_text),
+            website: editForm.website,
+            address: editForm.address,
+            company_activity: editForm.company_activity,
+            investment_type: editForm.investment_type,
+            investment_type_other:
+              editForm.investment_type === "غير ذلك"
+                ? editForm.investment_type_other
+                : "",
+            needs_review: editForm.needs_review,
+            review_notes: editForm.review_notes,
+          }),
+        });
+      }
       setCards((current) =>
         current.map((card) => (card.id === updated.id ? updated : card)),
       );
       setEditCard(null);
       setEditForm(null);
+      setEditFrontFile(null);
+      setEditBackFile(null);
       await Promise.all([load(), loadCategoryStats()]);
     } catch (e: any) {
       setError(e.message || "فشل حفظ التعديلات");
@@ -861,6 +890,8 @@ export default function DashboardPage() {
                 onClick={() => {
                   setEditCard(null);
                   setEditForm(null);
+                  setEditFrontFile(null);
+                  setEditBackFile(null);
                 }}
               >
                 إغلاق
@@ -1021,6 +1052,22 @@ export default function DashboardPage() {
                 />
                 يحتاج مراجعة
               </label>
+              <label className="full-width">
+                صورة الوجه الأمامي (اختياري)
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditFrontFile(e.target.files?.[0] || null)}
+                />
+              </label>
+              <label className="full-width">
+                صورة الوجه الخلفي (اختياري)
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setEditBackFile(e.target.files?.[0] || null)}
+                />
+              </label>
             </div>
             <div className="button-row-saveEdit">
               <button
@@ -1036,6 +1083,8 @@ export default function DashboardPage() {
                 onClick={() => {
                   setEditCard(null);
                   setEditForm(null);
+                  setEditFrontFile(null);
+                  setEditBackFile(null);
                 }}
                 disabled={saving}
               >
