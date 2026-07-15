@@ -13,6 +13,8 @@ const EMPTY: CreateUserPayload = {
   username: '', email: '', first_name: '', last_name: '', phone: '', password: '',
 };
 
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
+
 function PasswordCell({ user }: { user: ManagedUser }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState('');
@@ -70,6 +72,8 @@ function AdminUsersInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [form, setForm] = useState<CreateUserPayload>(EMPTY);
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -96,6 +100,11 @@ function AdminUsersInner() {
       return haystack.includes(term);
     });
   }, [users, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const pageStart = filtered.length ? (page - 1) * pageSize + 1 : 0;
+  const pageEnd = Math.min(page * pageSize, filtered.length);
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -164,13 +173,21 @@ function AdminUsersInner() {
       </div>
 
       <div className="card">
-        <div className="section-head"><h2>المستخدمون</h2></div>
+        <div className="section-head">
+          <h2>المستخدمون</h2>
+          <label className="page-size-control">
+            عدد الصفوف
+            <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}>
+              {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+        </div>
         <label htmlFor="user-search">بحث بالاسم أو البريد</label>
         <input
           id="user-search"
           type="search"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           placeholder="اكتب اسماً أو بريداً إلكترونياً…"
           style={{ marginBottom: 14 }}
         />
@@ -183,6 +200,7 @@ function AdminUsersInner() {
         ) : filtered.length === 0 ? (
           <p className="status">{search.trim() ? 'لا نتائج مطابقة للبحث.' : 'لا يوجد مستخدمون بعد.'}</p>
         ) : (
+          <>
           <div className="table-wrap">
             <table>
               <thead>
@@ -192,7 +210,7 @@ function AdminUsersInner() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((u) => (
+                {paged.map((u) => (
                   <tr key={u.id}>
                     <td data-label="المستخدم" className="primary-cell">{u.username}</td>
                     <td data-label="البريد" className="ltr-text">{u.email || '—'}</td>
@@ -216,6 +234,15 @@ function AdminUsersInner() {
               </tbody>
             </table>
           </div>
+          <div className="pagination-info">
+            المعروض: <strong>{pageStart}-{pageEnd}</strong> من <strong>{filtered.length}</strong>
+          </div>
+          <nav className="pagination-bar" aria-label="صفحات المستخدمين">
+            <button type="button" className="btn-small" disabled={page <= 1} onClick={() => setPage((c) => Math.max(1, c - 1))}>السابق</button>
+            <span>صفحة <strong>{page}</strong> من <strong>{totalPages}</strong></span>
+            <button type="button" className="btn-small" disabled={page >= totalPages} onClick={() => setPage((c) => Math.min(totalPages, c + 1))}>التالي</button>
+          </nav>
+          </>
         )}
       </div>
     </main>
@@ -228,4 +255,3 @@ export default function AdminUsersPage() {
       <AdminUsersInner />
     </RequireAuth>  );
 }
-

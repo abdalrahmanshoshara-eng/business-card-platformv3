@@ -607,6 +607,14 @@ function DashboardPageInner() {
             </select>
           </label>
           <label>
+            من تاريخ
+            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
+          </label>
+          <label>
+            إلى تاريخ
+            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
+          </label>
+          <label>
             الدولة
             <select
               value={country}
@@ -617,14 +625,6 @@ function DashboardPageInner() {
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-          </label>
-          <label>
-            من تاريخ
-            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
-          </label>
-          <label>
-            إلى تاريخ
-            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
           </label>
           <label>
             حالة المراجعة

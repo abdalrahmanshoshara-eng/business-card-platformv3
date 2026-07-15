@@ -259,7 +259,7 @@ a {
   padding: 26px;
   margin-bottom: 20px;
   display: flex;
-  align-items: center;
+  /* align-items: center; */
   justify-content: center;
   flex-direction: column;
   box-shadow: var(--shadow-card);
@@ -397,14 +397,26 @@ label {
 }
 
 input,
-textarea,
-select {
+textarea {
   width: 100%;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   padding: 11px 14px;
   font: inherit;
   font-size: 14px;
+  background: var(--cream-input);
+  color: var(--text);
+  transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease);
+  outline: none;
+}
+
+select {
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  text-align: center;
   background: var(--cream-input);
   color: var(--text);
   transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease);
@@ -776,7 +788,7 @@ tbody tr:hover {
   border-radius: 8px;
   font-size: 12px;
   box-shadow: none;
-  width: 90%;
+  width: 100%;
 }
 
 .bilingual-cell {
@@ -1346,8 +1358,10 @@ tbody tr:hover {
 }
 
 .page-size-control {
-  display: inline-flex;
+  display: flex;
+  justify-content: space-between;
   grid-template-columns: none;
+  width: 100%;
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
@@ -1664,3 +1678,5 @@ button:disabled,
   .pw-input { width: 100%; }
   .profile-grid { flex-direction: column; }
 }
+/* Small "showing X-Y of N" line above pagination */
+.pagination-info { text-align: center; color: var(--text-muted); font-size: 13px; font-weight: 700; margin: 12px 0 4px; }
