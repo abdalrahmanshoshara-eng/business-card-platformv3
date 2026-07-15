@@ -1782,3 +1782,42 @@ button:disabled,
   .sidebar-toggle,
   .sidebar-overlay { display: none !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE FIX-UPS (v2) — closed drawer overflow + profile stacking.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 860px) {
+  /* A fixed, off-canvas drawer escapes overflow:hidden and creates a
+     phantom horizontal scroll (content gets cut off on the side).
+     Removing it from the box model entirely when closed kills that. */
+  .app-sidebar {
+    display: none;
+    transform: none;
+    visibility: visible;
+  }
+  .app-shell.sidebar-open .app-sidebar {
+    display: flex;
+    pointer-events: auto;
+    animation: drawerSlideIn .28s var(--ease);
+  }
+  @keyframes drawerSlideIn {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+
+  /* Profile: stack the two cards vertically on phones/tablets. */
+  .profile-grid { flex-direction: column; }
+  .profile-grid .card { width: 100%; }
+
+  /* Belt-and-suspenders: nothing in the flow may exceed the viewport. */
+  .container,
+  .card,
+  .card-details,
+  .hero,
+  .grid,
+  .grid-3,
+  .stats-grid,
+  input,
+  textarea,
+  select { max-width: 100%; }
+}
