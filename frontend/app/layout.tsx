@@ -1,5 +1,9 @@
 import './globals.css';
 import Link from 'next/link';
+import { AuthProvider } from '@/features/auth/AuthProvider';
+import AppShell from '@/components/AppShell';
+
+export const dynamic = 'force-dynamic';
 
 export const metadata = {
   title: 'استخراج بيانات الكرت الشخصي – وزارة الاقتصاد والصناعة',
@@ -10,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body suppressHydrationWarning>
+        <AuthProvider>
         <header className="site-header">
           <div className="header-overlay" aria-hidden="true"></div>
           <div className="header-inner">
@@ -31,7 +36,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <span className="header-badge">الجمهورية العربية السورية</span>
           </div>
         </header>
-        {children}
+        <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

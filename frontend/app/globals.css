@@ -231,7 +231,18 @@ a {
   border-radius: 2px;
   margin: 14px 0;
 }
-
+/* profile container */
+.profile-grid {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  gap: 20px;
+}
+.profile-grid{
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+}
 .card {
   background: var(--cream-card);
   border: 1px solid var(--border-strong);
@@ -756,7 +767,7 @@ tbody tr:hover {
   display: flex;
   gap: 8px;
   justify-content: center;
-  flex-wrap: wrap;
+  /* flex-wrap: wrap; */
 }
 
 .btn-small {
@@ -1160,6 +1171,7 @@ tbody tr:hover {
     display: block;
     width: 100%;
     min-width: 0;
+    text-align: center;
   }
 
   table {
@@ -1419,4 +1431,236 @@ button:disabled,
 
 .sort-toggle-button:hover {
   background: linear-gradient(135deg, var(--gold-hover), var(--gold));
+}
+/* ── App shell with side navigation ─────────────────────────── */
+.app-shell {
+  display: flex;
+  align-items: stretch;
+}
+.app-main {
+  flex: 1;
+  min-width: 0;
+}
+.app-sidebar {
+  position: sticky;
+  top: 4rem;
+  align-self: flex-start;
+  width: 240px;
+  min-height: calc(100vh - 4rem);
+  background: linear-gradient(160deg, var(--green-header), var(--green-deep));
+  color: #f7f3e8;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-left: 1px solid var(--gold-border);
+  box-shadow: var(--shadow-card);
+  z-index: 5;
+}
+.app-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(199, 166, 107, .25);
+}
+.app-sidebar-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold), var(--gold-hover));
+  color: var(--green-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.app-sidebar-user-meta { display: flex; flex-direction: column; overflow: hidden; }
+.app-sidebar-name { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-sidebar-role { font-size: 12px; color: var(--gold-hover); }
+.app-sidebar-nav { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.app-sidebar-link {
+  display: block;
+  padding: 11px 14px;
+  border-radius: 10px;
+  color: #efe9d8;
+  font-weight: 700;
+  transition: background .15s ease, color .15s ease;
+}
+.app-sidebar-link:hover { background: rgba(199, 166, 107, .14); }
+.app-sidebar-link.active {
+  background: linear-gradient(135deg, var(--gold), var(--gold-hover));
+  color: var(--green-deep);
+}
+.app-sidebar-logout {
+  margin-top: auto;
+  width: 100%;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid var(--gold-border);
+  background: transparent;
+  color: #f7f3e8;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.app-sidebar-logout:hover { background: rgba(192, 57, 43, .25); border-color: rgba(192, 57, 43, .5); }
+
+@media (max-width: 860px) {
+  .app-shell { flex-direction: column; }
+  .app-sidebar {
+    position: static;
+    width: 100%;
+    min-height: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    border-left: none;
+    border-bottom: 1px solid var(--gold-border);
+  }
+  .app-sidebar-user { border-bottom: none; padding-bottom: 0; }
+  .app-sidebar-nav { flex-direction: row; flex-wrap: wrap; flex: 1; }
+  .app-sidebar-logout { margin-top: 0; width: auto; }
+}
+
+/* ── Collapsible / responsive sidebar (overrides earlier rules) ── */
+.app-sidebar {
+  width: 288px;
+  padding-top: 62px; /* reserve space for the floating toggle */
+  transition: width .2s var(--ease), transform .25s var(--ease);
+}
+
+.sidebar-toggle {
+  position: fixed;
+  top: calc(4rem + 12px);
+  inset-inline-start: 16px;
+  z-index: 40;
+  width: 46px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--green-header), var(--green-mid));
+  border: 1px solid var(--gold-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(8, 61, 53, .25);
+}
+.sidebar-toggle span {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--gold-hover);
+  border-radius: 2px;
+}
+
+.sidebar-overlay {
+  position: fixed;
+  inset: 4rem 0 0 0;
+  background: rgba(5, 30, 26, .5);
+  z-index: 25;
+}
+
+/* Desktop: collapse by shrinking the sidebar to zero width. */
+@media (min-width: 861px) {
+  .app-shell.sidebar-closed .app-sidebar {
+    width: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+  }
+}
+
+/* Mobile / tablet: sidebar becomes a right-side drawer. */
+@media (max-width: 860px) {
+  .app-sidebar {
+    position: fixed;
+    top: 4rem;
+    right: 0;
+    height: calc(100vh - 4rem);
+    min-height: 0;
+    width: 280px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    transform: translateX(100%);
+    border-left: none;
+    border-right: 1px solid var(--gold-border);
+    z-index: 30;
+  }
+  .app-shell.sidebar-open .app-sidebar { transform: translateX(0); }
+  .app-sidebar-nav { flex-direction: column; flex: 1; }
+  .app-sidebar-user { border-bottom: 1px solid rgba(199, 166, 107, .25); padding-bottom: 16px; }
+  .app-sidebar-logout { margin-top: auto; width: 100%; }
+}
+
+/* ── Admin users: password cell + icon buttons ─────────────── */
+.pw-cell { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.pw-dots { letter-spacing: 2px; color: var(--text-muted); }
+.pw-input { width: 150px; padding: 7px 10px; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--border-strong); background: var(--cream-card);
+  color: var(--green-header); cursor: pointer; transition: background .15s ease;
+  font-size: 16px; line-height: 1; flex: 0 0 auto;
+}
+.icon-btn:disabled { opacity: .5; cursor: default; }
+.icon-btn:hover { background: rgba(199, 166, 107, .14); }
+/* ── Header / sidebar alignment + icons (final overrides) ───── */
+/* Lock header to exactly 4rem so it never overlaps the content offset. */
+.site-header { height: 4rem; min-height: 4rem; display: flex; align-items: center; }
+.header-inner { width: 100%; }
+.header-logo img { max-height: 42px; width: auto; }
+
+/* Sidebar: no toggle reserve (toggle is a floating circle now); icon rows. */
+.app-sidebar { padding-top: 20px; }
+.app-sidebar-link { display: flex; align-items: center; gap: 10px; }
+.app-sidebar-logout { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.app-sidebar-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+
+/* Polished circular toggle button, aligned just under the header. */
+.sidebar-toggle {
+  position: fixed;
+  top: calc(3rem + 20px);
+  inset-inline-start: 6px;
+  z-index: 45;
+  width: 42px;
+  height: 22px;
+  padding: 0;
+  border-radius: 25%;
+  background: linear-gradient(135deg, var(--gold), var(--gold-hover));
+  color: var(--green-deep);
+  border: 1px solid rgba(199, 166, 107, .5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(8, 61, 53, .28);
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease);
+}
+.sidebar-toggle:hover { transform: translateY(-1px) scale(1.05); }
+.sidebar-toggle span { display: none; }
+
+@media (min-width: 861px) {
+  .app-main { padding-top: 8px; }
+}
+
+/* ── Profile page grid ─────────────────────────────────────── */
+.profile-grid { display: flex; flex-direction: row; gap: 20px; }
+.profile-grid .card { margin: 0; width: 100%; }
+.profile-card-logout { grid-column: 1 / -1; text-align: center; }
+@media (max-width: 860px) { .profile-grid { grid-template-columns: 1fr; } }
+
+/* ── Mobile: keep the password cell inside its card row ────── */
+@media (max-width: 860px) {
+  .pw-cell { flex-wrap: wrap; justify-content: flex-start; }
+  .pw-input { width: 100%; }
+  .profile-grid { flex-direction: column; }
 }

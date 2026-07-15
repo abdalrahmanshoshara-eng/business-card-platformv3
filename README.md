@@ -294,3 +294,25 @@ docker compose ps
 docker compose logs backend --tail=100
 docker compose logs frontend --tail=100
 ```
+
+## الحسابات والمصادقة وملكية الكروت
+
+المنصة الآن تتطلب تسجيل الدخول (Django Session Authentication). كل كرت مرتبط بمالك، وكل مستخدم يرى كروته فقط، بينما يرى المشرف (`is_staff`/`is_superuser`) جميع الكروت ويدير المستخدمين.
+
+### الإعداد لأول مرة
+
+```bash
+cd backend
+python manage.py migrate
+python manage.py createsuperuser
+# إسناد الكروت القديمة (بلا مالك) إلى حساب مشرف:
+python manage.py assign_legacy_cards --username <admin_username>
+# أو تلقائياً إذا وُجد superuser واحد فقط:
+python manage.py assign_legacy_cards
+# معاينة دون كتابة:
+python manage.py assign_legacy_cards --dry-run
+```
+
+الكروت التي لا تملك مالكاً تبقى ظاهرة للمشرفين فقط حتى يتم إسنادها. الأمر لا يحذف أي كرت أو صورة.
+
+التسجيل الذاتي معطّل افتراضياً (`PUBLIC_REGISTRATION_ENABLED=false`)؛ ينشئ المشرف المستخدمين من صفحة `/admin/users`. راجع `docs/ARCHITECTURE.md` للتفاصيل، ومتغيرات البيئة في `backend/.env.example`.

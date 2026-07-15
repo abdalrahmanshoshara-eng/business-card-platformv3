@@ -1,4 +1,5 @@
 'use client';
+import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { FormEvent, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -15,7 +16,7 @@ type DuplicateCandidate = {
   score: number;
 };
 
-export default function ManualAddPage() {
+function ManualAddPageInner() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error' | 'warning'; text?: string }>({ type: 'idle' });
   const [saved, setSaved] = useState<BusinessCard | null>(null);
@@ -37,7 +38,7 @@ export default function ManualAddPage() {
     const form = formRef.current;
     if (!form) return null;
     const fd = new FormData();
-    const fields = ['person_name','person_name_ar','person_name_en','job_title','job_title_ar','job_title_en','company_name','company_name_ar','company_name_en','website','address','company_activity','raw_text'];
+    const fields = ['person_name','person_name_ar','person_name_en','job_title','job_title_ar','job_title_en','company_name','company_name_ar','company_name_en','website','address','country','company_activity','raw_text'];
     for (const name of fields) {
       const el = form.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
       if (el && el.value) fd.append(name, el.value);
@@ -114,6 +115,7 @@ export default function ManualAddPage() {
             <label>الإيميلات (افصل بـ | )<input name="emails" placeholder="a@example.com | b@example.com" /></label>
             <label>الموقع الالكتروني<input name="website" placeholder="example.com" /></label>
             <label>العنوان<textarea name="address" /></label>
+            <label>الدولة<input name="country" placeholder="سوريا، تركيا، السعودية..." /></label>
             <label>نشاط الشركة<textarea name="company_activity" /></label>
             <label>نوع الاستثمار
               <select name="investment_type" value={investmentType} onChange={(e) => setInvestmentType(e.target.value)}>
@@ -183,5 +185,13 @@ export default function ManualAddPage() {
 
       </section>
     </main>
+  );
+}
+
+export default function ManualAddPage() {
+  return (
+    <__RequireAuth>
+      <ManualAddPageInner />
+    </__RequireAuth>
   );
 }

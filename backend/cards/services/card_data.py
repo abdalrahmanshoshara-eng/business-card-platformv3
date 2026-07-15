@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .normalization import build_duplicate_hash, clean_list, normalize_phones, normalize_website
+from .normalization import build_duplicate_hash, clean_list, derive_country, normalize_phones, normalize_website
 from .website_enrichment import infer_investment_type
 
 INVESTMENT_TYPE_CHOICES = [
@@ -188,5 +188,7 @@ def prepare_card_data(
         prepared['investment_type'] = inferred_type
         prepared['investment_type_other'] = inferred_other
 
+    if not prepared.get('country'):
+        prepared['country'] = derive_country(prepared)
     prepared['duplicate_hash'] = build_duplicate_hash(prepared)
     return prepared

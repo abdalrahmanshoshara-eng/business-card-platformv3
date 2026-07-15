@@ -1,4 +1,5 @@
 "use client";
+import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -45,6 +46,7 @@ type EditableCard = {
   emails_text: string;
   website: string;
   address: string;
+  country: string;
   company_activity: string;
   investment_type: string;
   investment_type_other: string;
@@ -171,6 +173,7 @@ function toEditForm(card: BusinessCard): EditableCard {
     emails_text: (card.emails || []).join(" | "),
     website: card.website || "",
     address: card.address || "",
+    country: card.country || "",
     company_activity: card.company_activity || "",
     investment_type: card.investment_type || "",
     investment_type_other: card.investment_type_other || "",
@@ -222,12 +225,16 @@ function displayInvestment(card: BusinessCard) {
   return card.investment_type || "-";
 }
 
-export default function DashboardPage() {
+function DashboardPageInner() {
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
   const [activity, setActivity] = useState("");
   const [investmentType, setInvestmentType] = useState("");
   const [needsReview, setNeedsReview] = useState("");
+  const [country, setCountry] = useState("");
+  const [countries, setCountries] = useState<string[]>([]);
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const [cards, setCards] = useState<BusinessCard[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -257,8 +264,11 @@ export default function DashboardPage() {
     if (investmentType.trim())
       params.set("investment_type", investmentType.trim());
     if (needsReview) params.set("needs_review", needsReview);
+    if (country.trim()) params.set("country", country.trim());
+    if (createdFrom) params.set("created_from", createdFrom);
+    if (createdTo) params.set("created_to", createdTo);
     return params.toString();
-  }, [q, company, activity, investmentType, needsReview]);
+  }, [q, company, activity, investmentType, needsReview, country, createdFrom, createdTo]);
 
   const requestQuery = useMemo(() => {
     const params = new URLSearchParams(filterQuery);
@@ -368,6 +378,7 @@ export default function DashboardPage() {
         fd.append('emails', JSON.stringify(splitMultiValue(editForm.emails_text)));
         fd.append('website', editForm.website || '');
         fd.append('address', editForm.address || '');
+        fd.append('country', editForm.country || '');
         fd.append('company_activity', editForm.company_activity || '');
         fd.append('investment_type', editForm.investment_type || '');
         fd.append('investment_type_other', editForm.investment_type === 'غير ذلك' ? (editForm.investment_type_other || '') : '');
@@ -392,6 +403,7 @@ export default function DashboardPage() {
             emails: splitMultiValue(editForm.emails_text),
             website: editForm.website,
             address: editForm.address,
+            country: editForm.country,
             company_activity: editForm.company_activity,
             investment_type: editForm.investment_type,
             investment_type_other:
@@ -425,8 +437,18 @@ export default function DashboardPage() {
     return () => clearTimeout(handle);
   }, [requestQuery]);
 
+  async function loadCountries() {
+    try {
+      const data = await fetchJson<string[]>("/cards/countries/");
+      setCountries(data || []);
+    } catch {
+      // Non-critical: the country filter simply stays empty on failure.
+    }
+  }
+
   useEffect(() => {
     loadCategoryStats();
+    loadCountries();
   }, []);
 
   return (
@@ -585,6 +607,26 @@ export default function DashboardPage() {
             </select>
           </label>
           <label>
+            الدولة
+            <select
+              value={country}
+              onChange={(event) => { setPage(1); setCountry(event.target.value); }}
+            >
+              <option value="">كل الدول</option>
+              {countries.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            من تاريخ
+            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
+          </label>
+          <label>
+            إلى تاريخ
+            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
+          </label>
+          <label>
             حالة المراجعة
             <select
               value={needsReview}
@@ -616,6 +658,9 @@ export default function DashboardPage() {
               setActivity("");
               setInvestmentType("");
               setNeedsReview("");
+              setCountry("");
+              setCreatedFrom("");
+              setCreatedTo("");
             }}
           >
            حذف الفلترة
@@ -677,8 +722,10 @@ export default function DashboardPage() {
               <th>الموبايل</th>
               <th>الإيميل</th>
               <th>الموقع الالكتروني </th>
+              <th>الدولة</th>
               <th>نشاط الشركة</th>
               <th>نوع الاستثمار</th>
+              <th>تاريخ الإضافة</th>
               <th>الحالة</th>
               <th>إجراءات</th>
             </tr>
@@ -707,8 +754,10 @@ export default function DashboardPage() {
                 <td data-label="الموقع" className="ltr-text">
                   {card.website || "-"}
                 </td>
+                <td data-label="الدولة">{card.country || "-"}</td>
                 <td data-label="نشاط الشركة">{card.company_activity || "-"}</td>
                 <td data-label="نوع الاستثمار">{displayInvestment(card)}</td>
+                <td data-label="تاريخ الإضافة">{(card.created_at || "").slice(0, 10) || "-"}</td>
                 <td data-label="الحالة">
                   {card.needs_review ? (
                     <span className="badge warning">مراجعة</span>
@@ -1027,6 +1076,15 @@ export default function DashboardPage() {
                   }
                 />
               </label>
+              <label>
+                الدولة
+                <input
+                  value={editForm.country}
+                  onChange={(event) =>
+                    setEditForm({ ...editForm, country: event.target.value })
+                  }
+                />
+              </label>
               <label className="full-width">
                 ملاحظات المراجعة
                 <textarea
@@ -1095,5 +1153,13 @@ export default function DashboardPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <__RequireAuth>
+      <DashboardPageInner />
+    </__RequireAuth>
   );
 }

@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from .normalization import normalize_website
+from .security import is_public_http_url
 
 ABOUT_WORDS = (
     'about', 'about-us', 'who-we-are', 'company', 'profile', 'overview', 'our-story',
@@ -116,14 +117,19 @@ def fetch_website_text(url: str, timeout: float = 12.0) -> tuple[str, str]:
 
     headers = {'User-Agent': 'Mozilla/5.0 BusinessCardPlatform/1.0', 'Accept-Language': 'ar,en;q=0.9'}
     errors = []
-    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers, verify=False) as client:
+    with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers, verify=True) as client:
         for candidate in _candidate_urls(url):
+            if not is_public_http_url(candidate):
+                errors.append(f'{candidate}: عنوان غير مسموح')
+                continue
             try:
                 res = client.get(candidate)
                 res.raise_for_status()
                 text, title, soup = _clean_html(res.text)
                 pages = [PageText(str(res.url), title, text[:5000], 40)] if text else []
                 for index, link in enumerate(_important_links(str(res.url), soup)):
+                    if not is_public_http_url(link):
+                        continue
                     try:
                         page_res = client.get(link)
                         page_res.raise_for_status()

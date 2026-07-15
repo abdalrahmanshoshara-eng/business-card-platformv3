@@ -1,4 +1,5 @@
 'use client';
+import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -24,7 +25,7 @@ type ExtractResponse = {
 
 type StepKey = 'upload' | 'extract' | 'duplicate' | 'save';
 
-export default function UploadPage() {
+function UploadPageInner() {
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const frontCameraRef = useRef<HTMLInputElement>(null);
@@ -262,5 +263,13 @@ export default function UploadPage() {
         </section>
       )}
     </main>
+  );
+}
+
+export default function UploadPage() {
+  return (
+    <__RequireAuth>
+      <UploadPageInner />
+    </__RequireAuth>
   );
 }

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import IntegrityError, models
 from django.utils import timezone
 
@@ -9,6 +10,15 @@ class BusinessCard(models.Model):
         ('needs_review', 'يحتاج مراجعة'),
     ]
 
+    # Nullable so legacy cards can be backfilled before enforcing ownership.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='business_cards',
+        null=True,
+        blank=True,
+        db_index=True,
+    )
     sequence_number = models.PositiveIntegerField(unique=True, editable=False, db_index=True)
     person_name = models.CharField(max_length=255, blank=True, db_index=True)
     person_name_ar = models.CharField(max_length=255, blank=True, db_index=True)
@@ -23,6 +33,7 @@ class BusinessCard(models.Model):
     emails = models.JSONField(default=list, blank=True)
     website = models.URLField(max_length=500, blank=True)
     address = models.TextField(blank=True)
+    country = models.CharField(max_length=100, blank=True, db_index=True)
     company_activity = models.TextField(blank=True, db_index=True)
     investment_type = models.CharField(max_length=255, blank=True, db_index=True)
     investment_type_other = models.CharField(max_length=255, blank=True)
@@ -31,7 +42,7 @@ class BusinessCard(models.Model):
     needs_review = models.BooleanField(default=True, db_index=True)
     review_notes = models.TextField(blank=True)
     website_visit_note = models.TextField(blank=True)
-    duplicate_hash = models.CharField(max_length=128, unique=True, db_index=True)
+    duplicate_hash = models.CharField(max_length=128, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
     front_image = models.ImageField(upload_to='cards/front/', blank=True, null=True)
     back_image = models.ImageField(upload_to='cards/back/', blank=True, null=True)
@@ -44,15 +55,22 @@ class BusinessCard(models.Model):
             models.Index(fields=['company_name', 'person_name']),
             models.Index(fields=['created_at', 'status']),
         ]
+        constraints = [
+            # duplicate_hash is unique per owner so two different users may
+            # each hold a card with the same contact info without leaking it.
+            models.UniqueConstraint(
+                fields=['owner', 'duplicate_hash'],
+                name='uniq_owner_duplicate_hash',
+            ),
+        ]
 
     def save(self, *args, **kwargs):
         if self.sequence_number:
             super().save(*args, **kwargs)
             return
 
-        # Gunicorn can handle two create requests at the same time. Compute the
-        # next sequence number with a small retry loop so a unique collision on
-        # sequence_number does not become a random 500 for the user.
+        # Compute the next sequence number with a small retry loop so a unique
+        # collision on sequence_number does not become a random 500.
         for attempt in range(5):
             last_number = (
                 BusinessCard.objects.order_by('-sequence_number')
@@ -63,11 +81,12 @@ class BusinessCard(models.Model):
             try:
                 super().save(*args, **kwargs)
                 return
-            except IntegrityError:
-                if attempt >= 4:
+            except IntegrityError as exc:
+                # Only a sequence_number collision is retryable; any other
+                # unique conflict (e.g. duplicate_hash) must surface as-is.
+                if 'sequence_number' not in str(exc).lower() or attempt >= 4:
                     raise
                 self.sequence_number = None
-
 
     def __str__(self):
         return f"#{self.sequence_number} {self.person_name or self.company_name or 'Business Card'}"

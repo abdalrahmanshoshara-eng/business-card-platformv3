@@ -41,7 +41,7 @@ class BusinessCardSerializer(serializers.ModelSerializer):
             'person_name', 'person_name_ar', 'person_name_en',
             'job_title', 'job_title_ar', 'job_title_en',
             'company_name', 'company_name_ar', 'company_name_en',
-            'mobile_numbers', 'emails', 'website', 'address', 'company_activity',
+            'mobile_numbers', 'emails', 'website', 'address', 'country', 'company_activity',
             'investment_type', 'investment_type_other',
             'raw_text', 'confidence', 'needs_review', 'review_notes', 'website_visit_note',
             'status', 'front_image', 'back_image', 'front_image_url', 'back_image_url',
@@ -60,11 +60,12 @@ class BusinessCardSerializer(serializers.ModelSerializer):
         return normalize_website(value)
 
     def get_front_image_url(self, obj):
-        if obj.front_image:
-            return obj.front_image.url
+        # Route through the ownership-checked endpoint, not the raw media path.
+        if obj.front_image and obj.pk:
+            return f'/api/cards/{obj.pk}/image/front'
         return ''
 
     def get_back_image_url(self, obj):
-        if obj.back_image:
-            return obj.back_image.url
+        if obj.back_image and obj.pk:
+            return f'/api/cards/{obj.pk}/image/back'
         return ''

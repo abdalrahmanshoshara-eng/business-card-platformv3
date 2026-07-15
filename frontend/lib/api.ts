@@ -16,6 +16,7 @@ export type BusinessCard = {
   emails: string[];
   website: string;
   address: string;
+  country: string;
   company_activity: string;
   investment_type: string;
   investment_type_other: string;
@@ -97,9 +98,32 @@ function formatApiError(data: any, fallback: string) {
   return fallback;
 }
 
+export function getCookie(name: string): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+// Prime the CSRF cookie so the first unsafe request can echo the token back.
+export async function ensureCsrf(): Promise<void> {
+  if (getCookie('csrftoken')) return;
+  await fetch(apiUrl('/auth/csrf'), { credentials: 'include', cache: 'no-store' });
+}
+
 export async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method || 'GET').toUpperCase();
+  const headers = new Headers(options?.headers || {});
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    if (!getCookie('csrftoken')) {
+      try { await ensureCsrf(); } catch { /* offline: let the request fail normally */ }
+    }
+    const token = getCookie('csrftoken');
+    if (token) headers.set('X-CSRFToken', token);
+  }
   const res = await fetch(apiUrl(path), {
     ...options,
+    headers,
+    credentials: 'include',
     cache: 'no-store',
     redirect: 'follow',
   });

@@ -12,16 +12,21 @@ cards_extract = BusinessCardViewSet.as_view({'post': 'extract'})
 cards_stats = BusinessCardViewSet.as_view({'get': 'stats'})
 cards_stats_by_category = BusinessCardViewSet.as_view({'get': 'stats_by_category'})
 cards_export = BusinessCardViewSet.as_view({'get': 'export_xlsx'})
+cards_image = BusinessCardViewSet.as_view({'get': 'image'})
+cards_countries = BusinessCardViewSet.as_view({'get': 'countries'})
 
 urlpatterns = [
     path('health/', health),
     path('health', health),
     path('cards', cards_list),
-    path('cards/<int:pk>', cards_detail),
-    path('cards/<int:pk>/', cards_detail),
     path('cards/extract', cards_extract),
     path('cards/stats', cards_stats),
     path('cards/stats-by-category', cards_stats_by_category),
     path('cards/export-xlsx', cards_export),
+    path('cards/countries', cards_countries),
+    path('cards/<int:pk>/image/<str:side>', cards_image),
+    path('cards/<int:pk>/image/<str:side>/', cards_image),
+    path('cards/<int:pk>', cards_detail),
+    path('cards/<int:pk>/', cards_detail),
     path('', include(router.urls)),
 ]
