@@ -252,6 +252,14 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         back_direct = validated.pop('back_image', None)
         current.update(validated)
         data = prepare_card_data(current, touched_fields=set(validated))
+        # The recomputed duplicate_hash may collide with another card owned by
+        # the same user (e.g. genuine duplicates kept as separate rows). Salt it
+        # so the edit succeeds without violating the per-owner unique constraint.
+        new_hash = data.get('duplicate_hash')
+        if new_hash and BusinessCard.objects.filter(
+            owner_id=serializer.instance.owner_id, duplicate_hash=new_hash
+        ).exclude(pk=serializer.instance.pk).exists():
+            data['duplicate_hash'] = salt_duplicate_hash(data)['duplicate_hash']
         # Allow uploaded front/back files to replace existing images when editing
         front = self.request.FILES.get('front') or front_direct
         back = self.request.FILES.get('back') or back_direct
