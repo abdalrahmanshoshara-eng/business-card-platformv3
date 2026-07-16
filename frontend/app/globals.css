@@ -933,6 +933,7 @@ tbody tr:hover {
     align-items: stretch;
     flex-direction: column;
     padding: 10px 0;
+
   }
 
   .header-nav {
@@ -1844,6 +1845,7 @@ button:disabled,
     width: 100%;
     min-width: 0;
     max-width: 100%;
+    text-align: start;
   }
 }
 

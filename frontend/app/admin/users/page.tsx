@@ -6,7 +6,7 @@ import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { RequireAuth } from '@/features/auth/Guard';
 import {
-  CreateUserPayload, ManagedUser, createUser, listUsers, setUserPassword, updateUser,
+  CreateUserPayload, ManagedUser, createUser, deleteUser, listUsers, setUserPassword, updateUser,
 } from '@/features/users/api';
 
 const EMPTY: CreateUserPayload = {
@@ -77,6 +77,8 @@ function AdminUsersInner() {
   const [form, setForm] = useState<CreateUserPayload>(EMPTY);
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,6 +130,22 @@ function AdminUsersInner() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'تعذّر تحديث الحالة.');
+    }
+  }
+
+  async function confirmDeleteUser() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await deleteUser(deleteTarget.id);
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'تعذّر حذف المستخدم.');
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -227,6 +245,9 @@ function AdminUsersInner() {
                         <button type="button" className="btn-small" onClick={() => toggleActive(u)}>
                           {u.is_active ? 'تعطيل' : 'تفعيل'}
                         </button>
+                        <button type="button" className="btn-small danger" onClick={() => setDeleteTarget(u)}>
+                          حذف
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -245,6 +266,34 @@ function AdminUsersInner() {
           </>
         )}
       </div>
+
+      {deleteTarget && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => { if (!deleting) setDeleteTarget(null); }}
+        >
+          <div className="modal-panel" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-modal-body">
+              <div className="confirm-modal-icon">🗑️</div>
+              <h2 style={{ justifyContent: 'center' }}>حذف المستخدم نهائياً</h2>
+              <p>
+                سيتم حذف المستخدم «{deleteTarget.username}» وجميع كروته
+                ({deleteTarget.card_count}) وصورها بشكل نهائي، ولا يمكن التراجع عن هذا الإجراء.
+              </p>
+            </div>
+            <div className="button-row" style={{ marginTop: 20 }}>
+              <button type="button" className="btn-small danger" disabled={deleting} onClick={confirmDeleteUser}>
+                {deleting ? 'جارٍ الحذف…' : 'حذف نهائي'}
+              </button>
+              <button type="button" className="btn-small" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

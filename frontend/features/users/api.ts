@@ -48,3 +48,7 @@ export async function setUserPassword(id: number, newPassword: string): Promise<
     body: JSON.stringify({ new_password: newPassword }),
   });
 }
+
+export async function deleteUser(id: number): Promise<void> {
+  await fetchJson(`/admin/users/${id}/`, { method: 'DELETE' });
+}

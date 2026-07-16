@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.tokens import default_token_generator
+from django.db import transaction
 from django.db.models import Count
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_str
@@ -216,10 +217,36 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         return Response(self._payload(instance))
 
     def destroy(self, request, *args, **kwargs):
-        # Users are deactivated, not deleted (cards use PROTECT).
+        """Permanently delete a regular user together with all their cards and
+        the cards' image files. The main admin (superuser) and the currently
+        signed-in admin are protected."""
+        from cards.models import BusinessCard
+
+        user = self.get_object()
+        if user.is_superuser:
+            return Response(
+                {'detail': 'لا يمكن حذف حساب المشرف الرئيسي.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if user == request.user:
+            return Response(
+                {'detail': 'لا يمكنك حذف حسابك الخاص.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cards = BusinessCard.objects.filter(owner=user)
+        card_count = cards.count()
+        username = user.username
+        with transaction.atomic():
+            for card in cards:
+                for field in (card.front_image, card.back_image):
+                    if field:
+                        field.delete(save=False)  # remove the file from storage
+            cards.delete()
+            user.delete()
         return Response(
-            {'detail': 'لا يمكن حذف المستخدمين. استخدم التعطيل بدلاً من ذلك.'},
-            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+            {'detail': f'تم حذف المستخدم "{username}" و{card_count} كرت نهائياً.'},
+            status=status.HTTP_200_OK,
         )
 
     @action(detail=True, methods=['post'], url_path='reset-link')
