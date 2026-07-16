@@ -54,6 +54,8 @@ class BusinessCard(models.Model):
         indexes = [
             models.Index(fields=['company_name', 'person_name']),
             models.Index(fields=['created_at', 'status']),
+            # Main list query: scope by owner, order by sequence_number desc.
+            models.Index(fields=['owner', '-sequence_number'], name='card_owner_seq_idx'),
         ]
         constraints = [
             # duplicate_hash is unique per owner so two different users may

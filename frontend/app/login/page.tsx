@@ -20,6 +20,7 @@ export default function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [forgotMode, setForgotMode] = useState(false);
@@ -29,12 +30,27 @@ export default function LoginPage() {
     if (!loading && user) router.replace(next);
   }, [loading, user, next, router]);
 
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('bcp_last_username');
+      if (saved) setUsername(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setSubmitting(true);
     try {
-      await login(username.trim(), password);
+      await login(username.trim(), password, remember);
+      try {
+        if (remember) window.localStorage.setItem('bcp_last_username', username.trim());
+        else window.localStorage.removeItem('bcp_last_username');
+      } catch {
+        /* ignore */
+      }
       router.replace(next);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'تعذّر تسجيل الدخول. حاول مرة أخرى.');
@@ -73,6 +89,11 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)} required />
 
             {error && <div className="status-box error" style={{ marginTop: 12 }}>{error}</div>}
+
+            <label className="check-row" style={{ marginTop: 14 }}>
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              تذكّرني على هذا الجهاز
+            </label>
 
             <div className="button-row">
               <button type="submit" className="btn btn-gold" disabled={submitting}>

@@ -21,4 +21,4 @@ RUN SECRET_KEY=build-only python manage.py collectstatic --noinput
 EXPOSE 8000
 
 # Use gunicorn for production; PORT is injected by Render (default 10000) or docker-compose
-CMD sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 300 --graceful-timeout 300 --log-file -"
+CMD sh -c "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers ${GUNICORN_WORKERS:-3} --threads ${GUNICORN_THREADS:-4} --worker-class gthread --timeout 300 --graceful-timeout 300 --log-file -"

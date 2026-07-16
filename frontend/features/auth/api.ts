@@ -22,12 +22,12 @@ export async function getMe(): Promise<AuthUser> {
   return fetchJson<AuthUser>('/auth/me');
 }
 
-export async function login(username: string, password: string): Promise<AuthUser> {
+export async function login(username: string, password: string, remember = false): Promise<AuthUser> {
   await ensureCsrf();
   return fetchJson<AuthUser>('/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, remember }),
   });
 }
 

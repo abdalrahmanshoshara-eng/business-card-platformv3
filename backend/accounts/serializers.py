@@ -104,6 +104,7 @@ class RegisterSerializer(serializers.Serializer):
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    remember = serializers.BooleanField(required=False, default=False)
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):

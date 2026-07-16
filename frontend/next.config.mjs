@@ -4,6 +4,8 @@ const backendUrl = rawBackendUrl.replace(/\/$/, '');
 
 const nextConfig = {
   trailingSlash: false,
+  compress: true,
+  poweredByHeader: false,
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${backendUrl}/api/:path*` },

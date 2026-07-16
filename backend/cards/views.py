@@ -468,7 +468,10 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             .values_list('country', flat=True)
             .distinct()
         )
-        return Response(sorted({(v or '').strip() for v in values if (v or '').strip()}))
+        response = Response(sorted({(v or '').strip() for v in values if (v or '').strip()}))
+        # The country list rarely changes; let the browser reuse it briefly.
+        response['Cache-Control'] = 'private, max-age=300'
+        return response
 
     @action(detail=False, methods=['get'], url_path='export-xlsx')
     def export_xlsx(self, request):
@@ -572,7 +575,11 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             handle = field.open('rb')
         except (FileNotFoundError, ValueError):
             raise Http404('تعذّر فتح الصورة.')
-        return FileResponse(handle)
+        response = FileResponse(handle)
+        # Card images never change once uploaded; let the browser cache them
+        # privately so re-opening the image modal is instant (no re-download).
+        response['Cache-Control'] = 'private, max-age=86400'
+        return response
 
 
 @api_view(['GET'])

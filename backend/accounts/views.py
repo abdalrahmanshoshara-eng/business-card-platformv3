@@ -92,6 +92,12 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         login(request, user)  # rotates the session key
+        # "Remember me": persist the session ~2 weeks, otherwise end it when the
+        # browser closes.
+        if serializer.validated_data.get('remember'):
+            request.session.set_expiry(60 * 60 * 24 * 14)
+        else:
+            request.session.set_expiry(0)
         return Response(UserSerializer(user).data)
 
 
