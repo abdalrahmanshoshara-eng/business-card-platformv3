@@ -496,7 +496,7 @@ function DashboardPageInner() {
 
       <section className="card-details">
         <div className="section-head">
-          <h2>عدد الشركات حسب نوع الاستثمار</h2>
+          <h2>عدد الكروت حسب نوع الاستثمار</h2>
           {investmentType && (
             <button
               type="button"

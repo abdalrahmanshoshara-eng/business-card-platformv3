@@ -1821,3 +1821,34 @@ button:disabled,
   textarea,
   select { max-width: 100%; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE FORM FIELDS — keep inputs/selects inside their card.
+   The single-column mobile grid used `1fr` (= minmax(auto,1fr)); the
+   `auto` minimum refused to shrink below a field's intrinsic width
+   (long placeholders, native date pickers), so fields spilled out.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .grid,
+  .grid-3,
+  .stats-grid { grid-template-columns: minmax(0, 1fr); }
+
+  .grid > *,
+  .grid-3 > *,
+  .stats-grid > *,
+  label { min-width: 0; }
+
+  input,
+  select,
+  textarea {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+/* Summary boxes (ملخص قاعدة البيانات) stay two-per-row on mobile — the
+   single-column form-grid rule above must not collapse them to one. */
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

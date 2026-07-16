@@ -430,23 +430,19 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             'company_activity', 'investment_type', 'investment_type_other', 'company_name'
         )
 
-        buckets: dict[str, dict] = {}
+        # Count cards (rows) per bucket so the chip number matches exactly what
+        # the table shows when that category is used as a filter.
+        buckets: dict[str, int] = {}
         for card in qs:
             if field == 'investment_type':
                 category = (card.investment_type or '').strip() or 'غير محدد'
             else:
                 category = derive_category(card.company_activity)
-
-            bucket = buckets.setdefault(category, {'companies': set(), 'blank_count': 0})
-            name = (card.company_name or '').strip()
-            if name:
-                bucket['companies'].add(name)
-            else:
-                bucket['blank_count'] += 1
+            buckets[category] = buckets.get(category, 0) + 1
 
         result = [
-            {'category': category, 'count': len(bucket['companies']) + bucket['blank_count']}
-            for category, bucket in buckets.items()
+            {'category': category, 'count': count}
+            for category, count in buckets.items()
         ]
         result.sort(key=lambda item: item['count'], reverse=True)
         return Response(result)
