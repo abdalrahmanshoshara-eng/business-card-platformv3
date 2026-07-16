@@ -14,10 +14,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument('--dry-run', action='store_true', help='Preview without writing.')
+        parser.add_argument('--rehash', action='store_true',
+                            help='Group by a freshly recomputed contact hash (catches legacy duplicates whose stored hash is blank or outdated).')
 
     def handle(self, *args, **opts):
         dry = opts.get('dry_run')
-        result = merge_duplicate_cards(BusinessCard.objects.all(), apply=not dry)
+        rehash = opts.get('rehash')
+        result = merge_duplicate_cards(BusinessCard.objects.all(), apply=not dry, rehash=rehash)
         if not dry:
             resequence_cards(BusinessCard.objects.all())
         prefix = '[dry-run] ' if dry else ''

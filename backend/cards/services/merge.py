@@ -29,6 +29,33 @@ def _base_hash(card) -> str:
     return (card.duplicate_hash or '').split(':', 1)[0]
 
 
+def _live_base_hash(card) -> str:
+    """Recompute the base hash from the card's *current* data (ignores the
+    stored hash). Cards with no identifying data stay ungrouped (return '')."""
+    from .normalization import build_duplicate_hash
+
+    emails = list(getattr(card, 'emails', None) or [])
+    phones = list(getattr(card, 'mobile_numbers', None) or [])
+    website = (getattr(card, 'website', '') or '').strip()
+    person = (getattr(card, 'person_name', '') or getattr(card, 'person_name_ar', '')
+              or getattr(card, 'person_name_en', '') or '').strip()
+    company = (getattr(card, 'company_name', '') or getattr(card, 'company_name_ar', '')
+               or getattr(card, 'company_name_en', '') or '').strip()
+    if not (emails or phones or website or person or company):
+        return ''
+    return build_duplicate_hash({
+        'emails': emails,
+        'mobile_numbers': phones,
+        'website': website,
+        'person_name': getattr(card, 'person_name', '') or '',
+        'person_name_ar': getattr(card, 'person_name_ar', '') or '',
+        'person_name_en': getattr(card, 'person_name_en', '') or '',
+        'company_name': getattr(card, 'company_name', '') or '',
+        'company_name_ar': getattr(card, 'company_name_ar', '') or '',
+        'company_name_en': getattr(card, 'company_name_en', '') or '',
+    })
+
+
 def merge_two(primary, dup) -> None:
     """Fold ``dup`` into ``primary`` (data-preserving), then delete ``dup``'s row."""
     for field in LIST_FIELDS:
@@ -65,14 +92,14 @@ def merge_two(primary, dup) -> None:
     dup.delete()  # deletes the row only; image files on disk are preserved
 
 
-def merge_duplicate_cards(queryset, *, apply: bool = True) -> dict:
+def merge_duplicate_cards(queryset, *, apply: bool = True, rehash: bool = False) -> dict:
     """Group ``queryset`` by (owner, base hash) and merge each duplicate group.
 
     Returns counts. With apply=False nothing is written (dry-run preview).
     """
     groups: dict[tuple, list] = defaultdict(list)
     for card in queryset.order_by('sequence_number', 'id'):
-        base = _base_hash(card)
+        base = _live_base_hash(card) if rehash else _base_hash(card)
         key = (card.owner_id, base) if base else (card.owner_id, f'__id{card.id}')
         groups[key].append(card)
 
