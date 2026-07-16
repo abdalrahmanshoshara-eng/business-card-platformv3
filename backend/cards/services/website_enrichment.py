@@ -36,6 +36,14 @@ INVESTMENT_TYPE_KEYWORDS = [
     ('مديرية المدن و المناطق الصناعية', ('industrial city', 'industrial zone', 'industrial estate', 'factory zone', 'مدينة صناعية', 'منطقة صناعية', 'استثمار صناعي')),
     ('مديرية الاشراف على التاهيل الفني', ('technical training', 'vocational', 'rehabilitation', 'skills development', 'training center', 'تأهيل فني', 'تدريب مهني', 'مركز تدريب')),
     ('مركز الاختبارات و الابحاث', ('laboratory', 'lab', 'research', 'r&d', 'quality control', 'analysis', 'اختبارات', 'أبحاث', 'مخبر', 'مختبر', 'تحليل')),
+    # Non-industrial categories (auto-detect for new cards; industrial ones above keep priority).
+    ('بنوك ومصارف', ('bank', 'banking', 'بنك', 'مصرف', 'مصارف')),
+    ('جهات حكومية', ('ministry', 'government', 'authority', 'وزارة', 'مديرية', 'هيئة', 'حكوم')),
+    ('بعثات دبلوماسية', ('embassy', 'consulate', 'diplomatic', 'سفارة', 'قنصلية', 'دبلوماسي')),
+    ('غرف تجارة', ('chamber of commerce', 'chamber', 'غرفة تجارة', 'غرف تجارة')),
+    ('منظمات وجمعيات', ('organization', 'united nations', 'association', 'منظمة', 'جمعية', 'اتحاد')),
+    ('شركات قابضة واستثمار', ('holding', 'ventures', 'investment fund', 'قابضة', 'قابضه')),
+    ('استشارات', ('consulting', 'consultancy', 'advisory', 'استشار')),
 ]
 
 
