@@ -231,6 +231,7 @@ a {
   border-radius: 2px;
   margin: 14px 0;
 }
+
 /* profile container */
 .profile-grid {
   display: flex;
@@ -238,11 +239,13 @@ a {
   justify-content: center;
   gap: 20px;
 }
-.profile-grid{
+
+.profile-grid {
   display: flex;
   flex-direction: row;
   justify-content: center;
 }
+
 .card {
   background: var(--cream-card);
   border: 1px solid var(--border-strong);
@@ -1447,15 +1450,18 @@ button:disabled,
 .sort-toggle-button:hover {
   background: linear-gradient(135deg, var(--gold-hover), var(--gold));
 }
+
 /* ── App shell with side navigation ─────────────────────────── */
 .app-shell {
   display: flex;
   align-items: stretch;
 }
+
 .app-main {
   flex: 1;
   min-width: 0;
 }
+
 .app-sidebar {
   position: sticky;
   top: 4rem;
@@ -1472,6 +1478,7 @@ button:disabled,
   box-shadow: var(--shadow-card);
   z-index: 5;
 }
+
 .app-sidebar-user {
   display: flex;
   align-items: center;
@@ -1479,6 +1486,7 @@ button:disabled,
   padding-bottom: 16px;
   border-bottom: 1px solid rgba(199, 166, 107, .25);
 }
+
 .app-sidebar-avatar {
   width: 44px;
   height: 44px;
@@ -1492,10 +1500,32 @@ button:disabled,
   font-size: 20px;
   flex-shrink: 0;
 }
-.app-sidebar-user-meta { display: flex; flex-direction: column; overflow: hidden; }
-.app-sidebar-name { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.app-sidebar-role { font-size: 12px; color: var(--gold-hover); }
-.app-sidebar-nav { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+.app-sidebar-user-meta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-sidebar-name {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-sidebar-role {
+  font-size: 12px;
+  color: var(--gold-hover);
+}
+
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
 .app-sidebar-link {
   display: block;
   padding: 11px 14px;
@@ -1504,11 +1534,16 @@ button:disabled,
   font-weight: 700;
   transition: background .15s ease, color .15s ease;
 }
-.app-sidebar-link:hover { background: rgba(199, 166, 107, .14); }
+
+.app-sidebar-link:hover {
+  background: rgba(199, 166, 107, .14);
+}
+
 .app-sidebar-link.active {
   background: linear-gradient(135deg, var(--gold), var(--gold-hover));
   color: var(--green-deep);
 }
+
 .app-sidebar-logout {
   margin-top: auto;
   width: 100%;
@@ -1522,10 +1557,17 @@ button:disabled,
   cursor: pointer;
   transition: background .15s ease, border-color .15s ease;
 }
-.app-sidebar-logout:hover { background: rgba(192, 57, 43, .25); border-color: rgba(192, 57, 43, .5); }
+
+.app-sidebar-logout:hover {
+  background: rgba(192, 57, 43, .25);
+  border-color: rgba(192, 57, 43, .5);
+}
 
 @media (max-width: 860px) {
-  .app-shell { flex-direction: column; }
+  .app-shell {
+    flex-direction: column;
+  }
+
   .app-sidebar {
     position: static;
     width: 100%;
@@ -1537,15 +1579,29 @@ button:disabled,
     border-left: none;
     border-bottom: 1px solid var(--gold-border);
   }
-  .app-sidebar-user { border-bottom: none; padding-bottom: 0; }
-  .app-sidebar-nav { flex-direction: row; flex-wrap: wrap; flex: 1; }
-  .app-sidebar-logout { margin-top: 0; width: auto; }
+
+  .app-sidebar-user {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .app-sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .app-sidebar-logout {
+    margin-top: 0;
+    width: auto;
+  }
 }
 
 /* ── Collapsible / responsive sidebar (overrides earlier rules) ── */
 .app-sidebar {
   width: 288px;
-  padding-top: 62px; /* reserve space for the floating toggle */
+  padding-top: 62px;
+  /* reserve space for the floating toggle */
   transition: width .2s var(--ease), transform .25s var(--ease);
 }
 
@@ -1567,6 +1623,7 @@ button:disabled,
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(8, 61, 53, .25);
 }
+
 .sidebar-toggle span {
   display: block;
   width: 20px;
@@ -1609,36 +1666,114 @@ button:disabled,
     border-right: 1px solid var(--gold-border);
     z-index: 30;
   }
-  .app-shell.sidebar-open .app-sidebar { transform: translateX(0); }
-  .app-sidebar-nav { flex-direction: column; flex: 1; }
-  .app-sidebar-user { border-bottom: 1px solid rgba(199, 166, 107, .25); padding-bottom: 16px; }
-  .app-sidebar-logout { margin-top: auto; width: 100%; }
+
+  .app-shell.sidebar-open .app-sidebar {
+    transform: translateX(0);
+  }
+
+  .app-sidebar-nav {
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .app-sidebar-user {
+    border-bottom: 1px solid rgba(199, 166, 107, .25);
+    padding-bottom: 16px;
+  }
+
+  .app-sidebar-logout {
+    margin-top: auto;
+    width: 100%;
+  }
 }
 
 /* ── Admin users: password cell + icon buttons ─────────────── */
-.pw-cell { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
-.pw-dots { letter-spacing: 2px; color: var(--text-muted); }
-.pw-input { width: 150px; padding: 7px 10px; }
-.icon-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; padding: 0; border-radius: 8px;
-  border: 1px solid var(--border-strong); background: var(--cream-card);
-  color: var(--green-header); cursor: pointer; transition: background .15s ease;
-  font-size: 16px; line-height: 1; flex: 0 0 auto;
+.pw-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
-.icon-btn:disabled { opacity: .5; cursor: default; }
-.icon-btn:hover { background: rgba(199, 166, 107, .14); }
+
+.pw-dots {
+  letter-spacing: 2px;
+  color: var(--text-muted);
+}
+
+.pw-input {
+  width: 150px;
+  padding: 7px 10px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--cream-card);
+  color: var(--green-header);
+  cursor: pointer;
+  transition: background .15s ease;
+  font-size: 16px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.icon-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.icon-btn:hover {
+  background: rgba(199, 166, 107, .14);
+}
+
 /* ── Header / sidebar alignment + icons (final overrides) ───── */
 /* Lock header to exactly 4rem so it never overlaps the content offset. */
-.site-header { height: 4rem; min-height: 4rem; display: flex; align-items: center; }
-.header-inner { width: 100%; }
-.header-logo img { max-height: 42px; width: auto; }
+.site-header {
+  height: 4rem;
+  min-height: 4rem;
+  display: flex;
+  align-items: center;
+}
+
+.header-inner {
+  width: 100%;
+}
+
+.header-logo img {
+  max-height: 42px;
+  width: auto;
+}
 
 /* Sidebar: no toggle reserve (toggle is a floating circle now); icon rows. */
-.app-sidebar { padding-top: 20px; }
-.app-sidebar-link { display: flex; align-items: center; gap: 10px; }
-.app-sidebar-logout { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.app-sidebar-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.app-sidebar {
+  padding-top: 20px;
+}
+
+.app-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-sidebar-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.app-sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
 
 /* Polished circular toggle button, aligned just under the header. */
 .sidebar-toggle {
@@ -1660,18 +1795,43 @@ button:disabled,
   box-shadow: 0 6px 16px rgba(8, 61, 53, .28);
   transition: transform .15s var(--ease), box-shadow .15s var(--ease);
 }
-.sidebar-toggle:hover { transform: translateY(-1px) scale(1.05); }
-.sidebar-toggle span { display: none; }
+
+.sidebar-toggle:hover {
+  transform: translateY(-1px) scale(1.05);
+}
+
+.sidebar-toggle span {
+  display: none;
+}
 
 @media (min-width: 861px) {
-  .app-main { padding-top: 8px; }
+  .app-main {
+    padding-top: 8px;
+  }
 }
 
 /* ── Profile page grid ─────────────────────────────────────── */
-.profile-grid { display: flex; flex-direction: row; gap: 20px; }
-.profile-grid .card { margin: 0; width: 100%; }
-.profile-card-logout { grid-column: 1 / -1; text-align: center; }
-@media (max-width: 860px) { .profile-grid { grid-template-columns: 1fr; } }
+.profile-grid {
+  display: flex;
+  flex-direction: row;
+  gap: 20px;
+}
+
+.profile-grid .card {
+  margin: 0;
+  width: 100%;
+}
+
+.profile-card-logout {
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
+@media (max-width: 860px) {
+  .profile-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 /* ── Mobile: keep the password cell inside its card row ─────
 /* ═══════════════════════════════════════════════════════════════════
@@ -1680,22 +1840,35 @@ button:disabled,
    ═══════════════════════════════════════════════════════════════════ */
 
 /* Shell can always shrink; never force a min width on the main column. */
-.app-shell { align-items: stretch; }
-.app-main { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+.app-shell {
+  align-items: stretch;
+}
+
+.app-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
 
 /* ── Mobile / tablet (≤860px): drawer navigation ──────────────────── */
 @media (max-width: 860px) {
+
   /* Root scroller must clip sideways so the off-canvas drawer can't
      create a phantom horizontal scroll that shifts/cuts the content. */
-  html, body {
+  html,
+  body {
     overflow-x: hidden;
     max-width: 100%;
   }
 
   .app-shell,
-  .app-shell.is-mobile { display: block; }
+  .app-shell.is-mobile {
+    display: block;
+  }
 
-  .app-main { width: 100%; }
+  .app-main {
+    width: 100%;
+  }
 
   /* Hamburger: a real 44px control docked in the fixed green header bar,
      at the inline-start (right in RTL). Bright gold on dark = clear. */
@@ -1704,7 +1877,8 @@ button:disabled,
     top: 10px;
     inset-inline-start: 12px;
     inset-inline-end: auto;
-    left: auto; right: auto;
+    left: auto;
+    right: 8px;
     width: 44px;
     height: 44px;
     padding: 0;
@@ -1719,11 +1893,20 @@ button:disabled,
     box-shadow: 0 4px 14px rgba(0, 0, 0, .28);
     cursor: pointer;
   }
-  .sidebar-toggle span { display: none; }
-  .sidebar-toggle svg { width: 24px; height: 24px; }
+
+  .sidebar-toggle span {
+    display: none;
+  }
+
+  .sidebar-toggle svg {
+    width: 24px;
+    height: 24px;
+  }
 
   /* Keep header content clear of the toggle. */
-  .header-inner { padding-inline-start: 60px; }
+  .header-inner {
+    padding-inline-start: 60px;
+  }
 
   /* Drawer: full-height panel below the fixed header, slides from the
      inline-start edge (right in RTL). Hidden + non-interactive when closed. */
@@ -1753,6 +1936,7 @@ button:disabled,
     visibility: hidden;
     pointer-events: none;
   }
+
   .app-shell.sidebar-open .app-sidebar {
     transform: translateX(0);
     visibility: visible;
@@ -1763,9 +1947,22 @@ button:disabled,
     border-bottom: 1px solid rgba(199, 166, 107, .25);
     padding-bottom: 16px;
   }
-  .app-sidebar-nav { flex-direction: column; flex: 0 0 auto; gap: 6px; }
-  .app-sidebar-link { font-size: 16px; padding: 13px 14px; }
-  .app-sidebar-logout { margin-top: 20px; width: 100%; }
+
+  .app-sidebar-nav {
+    flex-direction: column;
+    flex: 0 0 auto;
+    gap: 6px;
+  }
+
+  .app-sidebar-link {
+    font-size: 16px;
+    padding: 13px 14px;
+  }
+
+  .app-sidebar-logout {
+    margin-top: 20px;
+    width: 100%;
+  }
 
   /* Dim overlay below the header. */
   .sidebar-overlay {
@@ -1780,14 +1977,18 @@ button:disabled,
 
 /* ── Desktop (≥861px): never show mobile chrome ──────────────────── */
 @media (min-width: 861px) {
+
   .sidebar-toggle,
-  .sidebar-overlay { display: none !important; }
+  .sidebar-overlay {
+    display: none !important;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
    RESPONSIVE FIX-UPS (v2) — closed drawer overflow + profile stacking.
    ═══════════════════════════════════════════════════════════════════ */
 @media (max-width: 860px) {
+
   /* A fixed, off-canvas drawer escapes overflow:hidden and creates a
      phantom horizontal scroll (content gets cut off on the side).
      Removing it from the box model entirely when closed kills that. */
@@ -1796,19 +1997,31 @@ button:disabled,
     transform: none;
     visibility: visible;
   }
+
   .app-shell.sidebar-open .app-sidebar {
     display: flex;
     pointer-events: auto;
     animation: drawerSlideIn .28s var(--ease);
   }
+
   @keyframes drawerSlideIn {
-    from { transform: translateX(100%); }
-    to   { transform: translateX(0); }
+    from {
+      transform: translateX(100%);
+    }
+
+    to {
+      transform: translateX(0);
+    }
   }
 
   /* Profile: stack the two cards vertically on phones/tablets. */
-  .profile-grid { flex-direction: column; }
-  .profile-grid .card { width: 100%; }
+  .profile-grid {
+    flex-direction: column;
+  }
+
+  .profile-grid .card {
+    width: 100%;
+  }
 
   /* Belt-and-suspenders: nothing in the flow may exceed the viewport. */
   .container,
@@ -1820,7 +2033,9 @@ button:disabled,
   .stats-grid,
   input,
   textarea,
-  select { max-width: 100%; }
+  select {
+    max-width: 100%;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1830,14 +2045,19 @@ button:disabled,
    (long placeholders, native date pickers), so fields spilled out.
    ═══════════════════════════════════════════════════════════════════ */
 @media (max-width: 900px) {
+
   .grid,
   .grid-3,
-  .stats-grid { grid-template-columns: minmax(0, 1fr); }
+  .stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-  .grid > *,
-  .grid-3 > *,
-  .stats-grid > *,
-  label { min-width: 0; }
+  .grid>*,
+  .grid-3>*,
+  .stats-grid>*,
+  label {
+    min-width: 0;
+  }
 
   input,
   select,
@@ -1852,5 +2072,7 @@ button:disabled,
 /* Summary boxes (ملخص قاعدة البيانات) stay two-per-row on mobile — the
    single-column form-grid rule above must not collapse them to one. */
 @media (max-width: 900px) {
-  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
