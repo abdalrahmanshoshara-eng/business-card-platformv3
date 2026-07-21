@@ -175,7 +175,7 @@ function AdminUsersInner() {
             </div>
             <div>
               <label htmlFor="u-phone">رقم الموبايل (اختياري)</label>
-              <input id="u-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="+9665xxxxxxxx" />
+              <input id="u-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="09xxxxxxxx" />
             </div>
             <div>
               <label htmlFor="u-pass">كلمة المرور</label>
