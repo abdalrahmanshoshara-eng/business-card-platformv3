@@ -1,0 +1,35 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# انسخي هذا الملف إلى backend/.env على السيرفر وعدّلي القيم.
+#     cp deploy/env-backend.example backend/.env
+# استبدلي example.com بدومينك في كل الأسطر.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# مفتاح سري طويل وعشوائي — ولّديه بأمر:
+#   python -c "import secrets; print(secrets.token_urlsafe(64))"
+SECRET_KEY=CHANGE_ME_long_random_secret
+
+# على دومين عام يجب أن يكون false للأمان
+DEBUG=false
+
+# الدومين + مضيفات داخلية يحتاجها Docker/Nginx
+ALLOWED_HOSTS=example.com,www.example.com,backend,127.0.0.1,localhost
+
+# رابط قاعدة البيانات الداخلي (اسم خدمة postgres داخل شبكة Docker)
+# نفس كلمة المرور الموجودة في .env بجذر المشروع
+DATABASE_URL=postgres://business_cards:CHANGE_ME_to_a_strong_password@postgres:5432/business_cards
+
+# لا بد من https هنا لأن الموقع خلف Nginx بشهادة SSL
+CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com
+CSRF_TRUSTED_ORIGINS=https://example.com,https://www.example.com
+CORS_ALLOW_ALL_ORIGINS=false
+
+# مفاتيح Gemini (لتحليل الكروت) — انقليها من إعدادك الحالي
+GEMINI_API_KEY=put-your-key-here
+GEMINI_API_KEYS=put-key-1-here,put-key-2-here,put-key-3-here
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MAX_REQUESTS_PER_CARD=3
+GEMINI_KEY_COOLDOWN_SECONDS=60
+
+ENABLE_WEBSITE_ENRICHMENT=true
+ALLOW_GEMINI_WEBSITE_CLASSIFICATION=false
+MEDIA_ROOT=media

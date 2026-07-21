@@ -1,0 +1,7 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# انسخي هذا الملف إلى frontend/.env.local على السيرفر.
+#     cp deploy/env-frontend.example frontend/.env.local
+# المتصفّح يطلب /api من نفس الدومين، وNginx يوجّهه للباك إند.
+# ═══════════════════════════════════════════════════════════════════════════
+NEXT_PUBLIC_API_BASE_URL=/api
+NEXT_PUBLIC_BACKEND_URL=http://backend:8000

@@ -1,0 +1,68 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# قالب Nginx — يُعالَج تلقائياً بواسطة صورة nginx الرسمية (envsubst)
+# المتغيّر ${DOMAIN} يُستبدل من متغيّر البيئة DOMAIN في docker-compose.prod.yml
+# متغيّرات Nginx مثل $host و $uri تبقى كما هي (غير معرّفة كمتغيّرات بيئة).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# HTTP :80 — تحدي ACME (لإصدار الشهادة) + إعادة توجيه لكل شيء إلى HTTPS
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    # مسار تحقق Let's Encrypt
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS :443 — الموقع الفعلي
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN} www.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # حجم رفع كبير للكروت/الملفات (عدّليه حسب الحاجة)
+    client_max_body_size 50M;
+
+    # ── صور الكروت والوسائط: تُخدَّم مباشرة من القرص (سريع، يعمل مع DEBUG=false) ──
+    location /media/ {
+        alias /var/www/media/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public";
+    }
+
+    # ── واجهة Django البرمجية ولوحة الإدارة والملفات الثابتة ──
+    location ~ ^/(api|admin|static)/ {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # ── كل ما تبقّى: واجهة Next.js ──
+    location / {
+        proxy_pass http://frontend:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}

@@ -1,0 +1,19 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# انسخي هذا الملف إلى جذر المشروع باسم .env  (على السيرفر)
+#     cp deploy/env-root.example .env
+# يقرأه docker-compose.prod.yml تلقائياً.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# الدومين (بدون https:// وبدون /)
+DOMAIN=example.com
+
+# بريدك لإشعارات انتهاء الشهادة من Let's Encrypt
+CERTBOT_EMAIL=you@example.com
+
+# اجعليه 1 للتجربة أولاً (تفادي حدود Let's Encrypt)، ثم 0 للشهادة الحقيقية
+CERTBOT_STAGING=0
+
+# بيانات قاعدة البيانات — استخدمي كلمة مرور قوية (ليست business_cards)
+POSTGRES_DB=business_cards
+POSTGRES_USER=business_cards
+POSTGRES_PASSWORD=CHANGE_ME_to_a_strong_password
