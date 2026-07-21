@@ -90,7 +90,7 @@ function ProfileInner() {
               onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))} required />
             <label htmlFor="phone">رقم الموبايل</label>
             <input id="phone" type="tel" value={profile.phone}
-              onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} placeholder="+9665xxxxxxxx" />
+              onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))} placeholder="09xxxxxxxx" />
             {profileMsg && <div className={`status-box ${profileMsg.type}`} style={{ marginTop: 12 }}>{profileMsg.text}</div>}
             <div className="button-row">
               <button type="submit" className="btn btn-gold" disabled={savingProfile}>
