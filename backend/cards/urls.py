@@ -14,6 +14,8 @@ cards_stats_by_category = BusinessCardViewSet.as_view({'get': 'stats_by_category
 cards_export = BusinessCardViewSet.as_view({'get': 'export_xlsx'})
 cards_image = BusinessCardViewSet.as_view({'get': 'image'})
 cards_countries = BusinessCardViewSet.as_view({'get': 'countries'})
+cards_enrich = BusinessCardViewSet.as_view({'post': 'enrich'})
+cards_enrichment_status = BusinessCardViewSet.as_view({'get': 'enrichment_status'})
 
 urlpatterns = [
     path('health/', health),
@@ -26,6 +28,10 @@ urlpatterns = [
     path('cards/countries', cards_countries),
     path('cards/<int:pk>/image/<str:side>', cards_image),
     path('cards/<int:pk>/image/<str:side>/', cards_image),
+    path('cards/<int:pk>/enrich', cards_enrich),
+    path('cards/<int:pk>/enrich/', cards_enrich),
+    path('cards/<int:pk>/enrichment', cards_enrichment_status),
+    path('cards/<int:pk>/enrichment/', cards_enrichment_status),
     path('cards/<int:pk>', cards_detail),
     path('cards/<int:pk>/', cards_detail),
     path('', include(router.urls)),

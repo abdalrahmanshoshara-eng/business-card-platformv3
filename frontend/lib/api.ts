@@ -24,12 +24,46 @@ export type BusinessCard = {
   confidence: number;
   needs_review: boolean;
   review_notes: string;
+  review_fields: string[];
   website_visit_note: string;
   status: string;
   front_image_url: string;
   back_image_url: string;
   created_at: string;
 };
+
+export type CompanyEnrichment = {
+  canonical_domain: string;
+  source_url: string;
+  company_name: string;
+  company_description: string;
+  industry: string;
+  services: string[];
+  products: string[];
+  countries: string[];
+  language: string;
+  status: string;
+  model_name: string;
+  enriched_at: string | null;
+  refresh_after: string | null;
+  last_error: string;
+};
+
+export type EnrichmentResponse = {
+  card_id: number;
+  status: string;
+  reused: boolean;
+  detail?: string;
+  enrichment?: CompanyEnrichment;
+};
+
+// RFC4122 idempotency key (crypto.randomUUID with a safe fallback).
+export function newIdempotencyKey(): string {
+  try {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  } catch {}
+  return 'idem-' + Date.now().toString(16) + '-' + Math.random().toString(16).slice(2);
+}
 
 export class ApiError extends Error {
   status: number;

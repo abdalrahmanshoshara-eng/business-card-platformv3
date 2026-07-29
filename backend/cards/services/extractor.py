@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -15,9 +17,12 @@ from pydantic import BaseModel, Field
 from .gemini_keys import manager as gemini_key_manager
 from .normalization import clean_list, normalize_phones, normalize_website
 from .translation import fill_bilingual_fields
-from .website_enrichment import fetch_website_text, infer_company_activity, infer_investment_type
 
 logger = logging.getLogger(__name__)
+
+# Bump when the prompt/schema/pipeline changes in a way that should invalidate
+# cached extraction fingerprints. Part of the image fingerprint (see views).
+EXTRACTION_SCHEMA_VERSION = '2'
 
 
 class ExtractionError(RuntimeError):
@@ -58,25 +63,64 @@ class BusinessCardData(BaseModel):
     confidence: float = 0.0
     needs_review: bool = True
     review_notes: str = ''
+    review_fields: list[str] = Field(default_factory=list)
     website_visit_note: str = ''
 
 
+@dataclass
+class GeminiUsage:
+    """Real usage metadata returned by Gemini for a single call."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    thoughts_tokens: int | None = None
+    cached_tokens: int | None = None
+    available: bool = False
+
+
+@dataclass
+class ExtractionMeta:
+    """Everything the caller needs to write a GeminiUsageLog row."""
+
+    model_name: str = ''
+    usage: GeminiUsage = field(default_factory=GeminiUsage)
+    request_count: int = 0
+    retry_number: int = 0
+    latency_ms: int = 0
+    status: str = 'completed'
+
+
+@dataclass
+class ExtractionResult:
+    data: BusinessCardData
+    meta: ExtractionMeta
+
+
+# The schema is enforced via response_schema (real structured output); the prompt
+# only describes intent and the disambiguation rules — it is NOT the sole thing
+# keeping the output valid.
 SYSTEM_PROMPT = """
-You extract structured contact data from business-card images. The card can be Arabic, English, or mixed.
-Return ONLY valid JSON with this exact shape:
-{"person_name":"","person_name_ar":"","person_name_en":"","job_title":"","job_title_ar":"","job_title_en":"","company_name":"","company_name_ar":"","company_name_en":"","mobile_numbers":[],"emails":[],"website":"","address":"","company_activity":"","investment_type":"","investment_type_other":"","raw_text":"","confidence":0.0,"needs_review":true,"review_notes":""}
+You extract structured contact data from business-card images. A card may be
+Arabic, English, or mixed, and may be supplied as a single image (front only) or
+as two images that are the FRONT and BACK of the SAME physical card.
+
+Treat the two images as one card. Merge complementary information into a single
+result. Do NOT duplicate a person or emit two records.
 
 Rules:
-- Extract business-card identity and contact data only.
-- Do not invent missing values. Leave unknown fields empty.
-- Prefer printed business-card data over handwritten notes.
-- If clear handwritten contact data is visible, include it in raw_text or review_notes. Add it to phone/email only when very clear and not duplicated.
-- Support Arabic and English. For _ar and _en fields, copy the printed language version exactly. Do not translate names.
-- company_activity must be Arabic when activity is clearly printed or strongly implied by the card.
-- investment_type must be one of the official Arabic values when clear; otherwise use "غير ذلك" and put the free value in investment_type_other.
-- If a QR code is visible, do not rely on it as the only source; local QR decoding may be merged separately.
-- raw_text must contain only important identity/contact text and must be under 2000 characters.
-- Set needs_review=true when fields conflict, OCR is uncertain, important data may be missing, or confidence is low.
+- Extract identity and contact data only. Never invent values; leave unknown
+  fields empty ("" or []).
+- Prefer printed data over handwritten notes.
+- For _ar / _en fields, copy the printed language version exactly. Do not translate names.
+- company_activity must be Arabic when clearly printed or strongly implied.
+- investment_type must be one of the official Arabic values when clear; otherwise
+  use "غير ذلك" and put the free value in investment_type_other.
+- raw_text: only important identity/contact text, under 1200 characters. Be concise.
+- When the two sides conflict, do NOT invent a value: keep the clearest one and
+  add that field name to review_fields.
+- Set needs_review=true and populate review_fields when a field is uncertain,
+  conflicting, or likely incomplete.
 """
 
 STRING_FIELDS = {
@@ -86,26 +130,24 @@ STRING_FIELDS = {
     'website', 'address', 'company_activity', 'investment_type',
     'investment_type_other', 'raw_text', 'review_notes', 'website_visit_note',
 }
-LIST_FIELDS = {'mobile_numbers', 'emails'}
+LIST_FIELDS = {'mobile_numbers', 'emails', 'review_fields'}
+ALLOWED_REVIEW_FIELDS = STRING_FIELDS | {'mobile_numbers', 'emails'}
 EMAIL_RE = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+', re.I)
 URL_RE = re.compile(r'(?<!@)\b(?:https?://)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:/[^\s]*)?', re.I)
 PHONE_RE = re.compile(r'(?:\+?\d[\d\s().-]{6,}\d)')
 
-NON_FALLBACK_CATEGORIES = {
-    'gemini_rate_limit',
-    'gemini_quota_exceeded',
-    'all_gemini_keys_rate_limited',
-    'all_gemini_keys_invalid',
-    'gemini_location_not_supported',
-    'gemini_invalid_api_key',
-    'missing_gemini_api_key',
-}
-FALLBACK_CATEGORIES = {
+# Transient categories are retried with backoff on the SAME operation; the key
+# manager separately rotates keys for rate-limit / invalid-key cases.
+RETRYABLE_CATEGORIES = {
     'gemini_timeout',
     'gemini_transient',
     'extraction_parse_error',
     'gemini_external_error',
+    'gemini_output_truncated',
+    'gemini_empty_response',
 }
+# Finish reasons that mean the model refused/blocked (not worth retrying).
+_BLOCKED_FINISH_REASONS = {'SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'}
 
 
 def _extract_json(text: str) -> dict:
@@ -127,15 +169,19 @@ def _open_image(path: str | Path) -> Image.Image:
 
 def _sanitize_extracted_payload(payload: dict) -> dict:
     sanitized = dict(payload or {})
-    for field in STRING_FIELDS:
-        value = sanitized.get(field)
-        sanitized[field] = '' if value is None else str(value).strip()
-    for field in LIST_FIELDS:
-        value = sanitized.get(field)
+    for field_name in STRING_FIELDS:
+        value = sanitized.get(field_name)
+        sanitized[field_name] = '' if value is None else str(value).strip()
+    for field_name in LIST_FIELDS:
+        value = sanitized.get(field_name)
         if not isinstance(value, list):
-            sanitized[field] = []
+            sanitized[field_name] = []
         else:
-            sanitized[field] = [str(item).strip() for item in value if item not in {None, ''}]
+            sanitized[field_name] = [str(item).strip() for item in value if item not in {None, ''}]
+
+    # Only keep review_fields that name real fields (never let the model inject
+    # arbitrary keys through this list).
+    sanitized['review_fields'] = [f for f in sanitized['review_fields'] if f in ALLOWED_REVIEW_FIELDS]
 
     try:
         sanitized['confidence'] = float(sanitized.get('confidence') or 0.0)
@@ -145,12 +191,8 @@ def _sanitize_extracted_payload(payload: dict) -> dict:
     sanitized['confidence'] = max(0.0, min(1.0, sanitized['confidence']))
     sanitized['needs_review'] = bool(sanitized.get('needs_review', True))
     sanitized['raw_text'] = sanitized['raw_text'][:2000]
-    return sanitized
-
-
-def _is_weak_activity(value: str | None) -> bool:
-    text = re.sub(r'\s+', ' ', value or '').strip()
-    return not text or len(text) < 25 or text in {'شركة متخصصة', 'خدمات متنوعة', 'غير معروف', 'غير محدد'}
+    # Drop any unexpected keys so a hallucinated field never reaches the model.
+    return {k: v for k, v in sanitized.items() if k in BusinessCardData.model_fields}
 
 
 def _combine_bilingual(arabic: str, english: str, fallback: str = '') -> str:
@@ -206,22 +248,101 @@ def _raise_key_exhausted(reason: str) -> None:
     raise ExtractionError('لا يوجد مفتاح Gemini متاح حالياً.', category='all_gemini_keys_exhausted', status_code=502, recoverable=True)
 
 
-def _increment_request_count(context: dict) -> None:
-    context['requests_made'] = int(context.get('requests_made', 0)) + 1
+def _read_usage(response) -> GeminiUsage:
+    """Pull real usage metadata off a Gemini response. Never raises."""
+    meta = getattr(response, 'usage_metadata', None)
+    if meta is None:
+        return GeminiUsage()
+
+    def _int(value):
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    input_tokens = _int(getattr(meta, 'prompt_token_count', None)) or 0
+    output_tokens = _int(getattr(meta, 'candidates_token_count', None)) or 0
+    total_tokens = _int(getattr(meta, 'total_token_count', None)) or (input_tokens + output_tokens)
+    thoughts = _int(getattr(meta, 'thoughts_token_count', None))
+    cached = _int(getattr(meta, 'cached_content_token_count', None))
+    return GeminiUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+        thoughts_tokens=thoughts,
+        cached_tokens=cached,
+        available=True,
+    )
 
 
-def _ensure_request_budget(context: dict) -> None:
-    if int(context.get('requests_made', 0)) >= int(context.get('max_requests', 3)):
-        raise ExtractionError('تم إيقاف العملية لتجنب استهلاك طلبات Gemini إضافية لهذا الكرت.', category='gemini_request_budget_exceeded', status_code=429, recoverable=False)
+def _generation_config(max_output_tokens: int | None = None) -> types.GenerateContentConfig:
+    kwargs = dict(
+        system_instruction=SYSTEM_PROMPT,
+        temperature=float(getattr(settings, 'GEMINI_CARD_TEMPERATURE', 0)),
+        max_output_tokens=int(max_output_tokens or getattr(settings, 'GEMINI_CARD_MAX_OUTPUT_TOKENS', 2048)),
+        response_mime_type='application/json',
+        response_schema=BusinessCardData,
+    )
+    budget = int(getattr(settings, 'GEMINI_CARD_THINKING_BUDGET', 0))
+    # Minimise "thinking" for this extraction task. -1 lets the model decide.
+    kwargs['thinking_config'] = types.ThinkingConfig(thinking_budget=budget)
+    return types.GenerateContentConfig(**kwargs)
 
 
-def _call_gemini(image_paths: list[str | Path], user_instruction: str, context: dict | None = None) -> BusinessCardData:
-    if context is None:
-        context = {'requests_made': 0, 'max_requests': 3, 'tried_key_indexes': set()}
-    context.setdefault('tried_key_indexes', set())
+def _finish_reason(response) -> str:
+    """Best-effort finish reason name of the first candidate ('' if unknown)."""
+    try:
+        candidates = getattr(response, 'candidates', None) or []
+        if not candidates:
+            return ''
+        reason = getattr(candidates[0], 'finish_reason', None)
+        if reason is None:
+            return ''
+        return getattr(reason, 'name', str(reason)).upper()
+    except Exception:
+        return ''
 
+
+def _parse_response(response) -> BusinessCardData:
+    """Prefer the structured-output parse; fall back to text JSON only if needed.
+
+    Distinguishes *why* a response has no usable JSON (truncated vs blocked vs
+    empty) so the user gets an accurate message instead of a generic failure.
+    Always re-validates through the pydantic schema so an off-schema payload is
+    rejected instead of producing a corrupt card.
+    """
+    parsed = getattr(response, 'parsed', None)
+    if isinstance(parsed, BusinessCardData):
+        return BusinessCardData.model_validate(_sanitize_extracted_payload(parsed.model_dump()))
+    if isinstance(parsed, dict):
+        return BusinessCardData.model_validate(_sanitize_extracted_payload(parsed))
+
+    text = getattr(response, 'text', '') or ''
+    if not text.strip():
+        reason = _finish_reason(response)
+        if reason == 'MAX_TOKENS':
+            raise ExtractionError(
+                'اقتُطعت استجابة Gemini قبل اكتمالها بسبب حد المخرجات. تتم إعادة المحاولة تلقائياً.',
+                category='gemini_output_truncated', status_code=502, recoverable=True)
+        if reason in _BLOCKED_FINISH_REASONS:
+            raise ExtractionError(
+                'تعذّر استخراج الكرت لأن الصورة حُجبت من Gemini. جرّب صورة أوضح للبطاقة.',
+                category='gemini_content_blocked', status_code=422, recoverable=False)
+        raise ExtractionError(
+            'لم تُعِد Gemini أي بيانات قابلة للقراءة لهذه الصورة.',
+            category='gemini_empty_response', status_code=502, recoverable=True)
+
+    return BusinessCardData.model_validate(_sanitize_extracted_payload(_extract_json(text)))
+
+
+def _call_gemini_once(image_paths: list[str | Path], user_instruction: str, context: dict, max_output_tokens: int | None = None) -> tuple[BusinessCardData, GeminiUsage, str]:
+    """Perform a single Gemini generate_content call, rotating keys on
+    rate-limit / invalid-key errors. Returns (data, usage, model_name).
+    """
     contents: list[object] = [user_instruction]
     contents.extend(_open_image(path) for path in image_paths)
+    model_name = settings.GEMINI_CARD_MODEL
+    config = _generation_config(max_output_tokens)
 
     last_error: ExtractionError | None = None
     while True:
@@ -236,44 +357,28 @@ def _call_gemini(image_paths: list[str | Path], user_instruction: str, context: 
                 raise last_error
             _raise_key_exhausted(reason)
 
-        _ensure_request_budget(context)
         key_index, key = candidate
         tried_indexes.add(key_index)
         client = genai.Client(api_key=key)
         started = time.perf_counter()
         try:
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0,
-                    response_mime_type='application/json',
-                ),
-            )
-            _increment_request_count(context)
+            response = client.models.generate_content(model=model_name, contents=contents, config=config)
+            context['requests_made'] = int(context.get('requests_made', 0)) + 1
+            usage = _read_usage(response)
+            data = _parse_response(response)
             logger.info(
-                'gemini_request_success images=%d elapsed_ms=%d selected_key_index=%s key_attempt_count=%s requests_made=%s',
-                len(image_paths),
-                int((time.perf_counter() - started) * 1000),
-                key_index,
-                len(tried_indexes),
-                context['requests_made'],
+                'gemini_request_success images=%d elapsed_ms=%d selected_key_index=%s requests_made=%s in_tok=%s out_tok=%s',
+                len(image_paths), int((time.perf_counter() - started) * 1000), key_index,
+                context['requests_made'], usage.input_tokens, usage.output_tokens,
             )
-            return BusinessCardData.model_validate(_sanitize_extracted_payload(_extract_json(getattr(response, 'text', '') or '')))
+            return data, usage, model_name
         except Exception as exc:
-            _increment_request_count(context)
+            context['requests_made'] = int(context.get('requests_made', 0)) + 1
             category, code, message, recoverable = _classify_exception(exc)
             logger.warning(
-                'gemini_request_failed selected_key_index=%s key_attempt_count=%s category=%s error_class=%s error=%s requests_made=%s',
-                key_index,
-                len(tried_indexes),
-                category,
-                exc.__class__.__name__,
-                _safe_error_summary(exc),
-                context['requests_made'],
+                'gemini_request_failed selected_key_index=%s category=%s error_class=%s error=%s requests_made=%s',
+                key_index, category, exc.__class__.__name__, _safe_error_summary(exc), context['requests_made'],
             )
-
             if category == 'gemini_invalid_api_key':
                 gemini_key_manager.mark_invalid(key_index, category)
                 last_error = ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc)
@@ -282,81 +387,63 @@ def _call_gemini(image_paths: list[str | Path], user_instruction: str, context: 
                 gemini_key_manager.mark_cooldown(key_index, category)
                 last_error = ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc)
                 continue
-            if category == 'gemini_location_not_supported':
-                raise ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc) from exc
-
             raise ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc) from exc
 
 
-def _extract_with_fallback(front_image: str | Path, back_image: str | Path | None, context: dict | None = None) -> tuple[BusinessCardData, str]:
+def _extract_single_call(front_image, back_image, context: dict) -> ExtractionResult:
+    """The ONLY Gemini path: front (and optional back) in a single request,
+    with bounded exponential-backoff+jitter retry for transient failures.
+    """
     images = [front_image, *([back_image] if back_image else [])]
-    if context is None:
-        context = {'requests_made': 0, 'max_requests': 3, 'tried_key_indexes': set()}
+    instruction = (
+        'Extract contact information from the front and back of this ONE business card '
+        'and return a single merged JSON object.'
+        if back_image else
+        'Extract contact information from this business card and return a single JSON object.'
+    )
 
-    try:
-        return _call_gemini(images, 'Extract contact information from the front and back business-card images together. Return JSON only.', context=context), 'single_shot'
-    except ExtractionError as exc:
-        logger.warning('gemini_single_shot_failed category=%s recoverable=%s requests_made=%s', exc.category, exc.recoverable, context.get('requests_made'))
-        if exc.category in NON_FALLBACK_CATEGORIES or exc.category not in FALLBACK_CATEGORIES or not back_image:
-            raise
+    max_retries = int(getattr(settings, 'GEMINI_CARD_MAX_RETRIES', 2))
+    base_delay = float(getattr(settings, 'GEMINI_CARD_RETRY_BASE_DELAY', 0.75))
+    token_budget = int(getattr(settings, 'GEMINI_CARD_MAX_OUTPUT_TOKENS', 2048))
+    total_started = time.perf_counter()
+    attempt = 0
+    last_error: ExtractionError | None = None
 
-    results: list[BusinessCardData] = []
-    failures: list[ExtractionError] = []
-    # Use a fresh per-fallback key-attempt set so the second/third Gemini requests
-    # do not blindly exhaust every key because the unified request used one key.
-    for label, path in (('front', front_image), ('back', back_image)):
-        side_context = {
-            'requests_made': context.get('requests_made', 0),
-            'max_requests': context.get('max_requests', 3),
-            'tried_key_indexes': set(),
-        }
+    while attempt <= max_retries:
+        # Each backoff retry starts with a fresh key-attempt set (the within-call
+        # set only exists to avoid re-hitting a rate-limited key in one attempt).
+        context['tried_key_indexes'] = set()
         try:
-            item = _call_gemini([path], f'Extract contact information from the {label} side of this business card. Return JSON only.', context=side_context)
-            context['requests_made'] = side_context['requests_made']
-            results.append(item)
+            data, usage, model_name = _call_gemini_once(images, instruction, context, max_output_tokens=token_budget)
+            return ExtractionResult(
+                data=data,
+                meta=ExtractionMeta(
+                    model_name=model_name,
+                    usage=usage,
+                    request_count=int(context.get('requests_made', 0)),
+                    retry_number=attempt,
+                    latency_ms=int((time.perf_counter() - total_started) * 1000),
+                    status='completed',
+                ),
+            )
         except ExtractionError as exc:
-            context['requests_made'] = side_context.get('requests_made', context.get('requests_made', 0))
-            failures.append(exc)
-            logger.warning('gemini_fallback_side_failed side=%s category=%s recoverable=%s', label, exc.category, exc.recoverable)
-            if exc.category in NON_FALLBACK_CATEGORIES:
-                break
+            last_error = exc
+            if exc.category not in RETRYABLE_CATEGORIES or attempt >= max_retries:
+                raise
+            # A truncated JSON won't fix itself on retry — give the next attempt
+            # a bigger output budget instead of just waiting.
+            if exc.category == 'gemini_output_truncated':
+                token_budget = min(token_budget * 2, 8192)
+                logger.warning('gemini_output_truncated bumping max_output_tokens=%s', token_budget)
+            delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
+            logger.warning('gemini_retry attempt=%s category=%s sleep=%.2fs', attempt + 1, exc.category, delay)
+            time.sleep(delay)
+            attempt += 1
 
-    if not results:
-        if failures:
-            raise failures[-1]
-        raise ExtractionError('تعذر استخراج بيانات الكرت من Gemini.', category='gemini_external_error', status_code=502, recoverable=True)
-    return _merge_extractions(results), 'fallback_two_stage'
-
-
-def _merge_text(primary: str, secondary: str) -> tuple[str, bool]:
-    primary = (primary or '').strip()
-    secondary = (secondary or '').strip()
-    if primary and secondary and primary != secondary:
-        return primary if len(primary) >= len(secondary) else secondary, True
-    return primary or secondary, False
+    raise last_error or ExtractionError('تعذر استخراج بيانات الكرت من Gemini.')
 
 
-def _merge_extractions(items: list[BusinessCardData]) -> BusinessCardData:
-    merged = BusinessCardData()
-    conflict = False
-    for item in items:
-        for field in STRING_FIELDS - {'raw_text', 'review_notes', 'website_visit_note'}:
-            value, field_conflict = _merge_text(getattr(merged, field), getattr(item, field))
-            setattr(merged, field, value)
-            conflict = conflict or field_conflict
-        merged.mobile_numbers = clean_list([*merged.mobile_numbers, *item.mobile_numbers])
-        merged.emails = clean_list([*merged.emails, *item.emails])
-        merged.confidence = max(merged.confidence, item.confidence)
-        merged.needs_review = merged.needs_review or item.needs_review
-
-    raw_parts = [item.raw_text for item in items if item.raw_text]
-    merged.raw_text = '\n\n--- front/back ---\n\n'.join(dict.fromkeys(raw_parts))[:2000]
-    notes = [item.review_notes for item in items if item.review_notes]
-    merged.review_notes = ' | '.join(dict.fromkeys(notes))
-    merged.needs_review = merged.needs_review or conflict
-    return merged
-
-
+# ── QR local decoding (no Gemini call) ────────────────────────────────────
 def _decode_qr_images(image_paths: list[str | Path]) -> list[str]:
     try:
         import cv2
@@ -421,9 +508,9 @@ def _qr_payloads_to_data(payloads: list[str]) -> BusinessCardData:
             urls = [url for url in URL_RE.findall(payload) if '@' not in url]
             if urls:
                 parsed['website'] = urls[0]
-        for field in ('person_name', 'job_title', 'company_name', 'website', 'address'):
-            if parsed.get(field) and not collected.get(field):
-                collected[field] = parsed[field]
+        for field_name in ('person_name', 'job_title', 'company_name', 'website', 'address'):
+            if parsed.get(field_name) and not collected.get(field_name):
+                collected[field_name] = parsed[field_name]
         collected['emails'].extend(parsed.get('emails', []))
         collected['mobile_numbers'].extend(parsed.get('mobile_numbers', []))
 
@@ -436,9 +523,9 @@ def _qr_payloads_to_data(payloads: list[str]) -> BusinessCardData:
 def _merge_qr(parsed: BusinessCardData, qr_data: BusinessCardData) -> BusinessCardData:
     if not qr_data.raw_text:
         return parsed
-    for field in ('person_name', 'job_title', 'company_name', 'website', 'address'):
-        if not getattr(parsed, field) and getattr(qr_data, field):
-            setattr(parsed, field, getattr(qr_data, field))
+    for field_name in ('person_name', 'job_title', 'company_name', 'website', 'address'):
+        if not getattr(parsed, field_name) and getattr(qr_data, field_name):
+            setattr(parsed, field_name, getattr(qr_data, field_name))
     parsed.mobile_numbers = clean_list([*parsed.mobile_numbers, *qr_data.mobile_numbers])
     parsed.emails = clean_list([*parsed.emails, *qr_data.emails])
     parsed.raw_text = '\n'.join(part for part in [parsed.raw_text, qr_data.raw_text] if part)[:2000]
@@ -459,27 +546,11 @@ def _postprocess(parsed: BusinessCardData) -> BusinessCardData:
 
 
 def _finalize(parsed: BusinessCardData) -> BusinessCardData:
-    page_text = ''
-    if settings.ENABLE_WEBSITE_ENRICHMENT and parsed.website:
-        page_text, note = fetch_website_text(parsed.website)
-        parsed.website_visit_note = note
-        if _is_weak_activity(parsed.company_activity):
-            activity = infer_company_activity(parsed.company_name, parsed.website, page_text, parsed.raw_text)
-            if activity:
-                parsed.company_activity = activity
-        if note:
-            parsed.review_notes = ((parsed.review_notes or '') + ' ' + note).strip()
+    """Deterministic, local finalisation only.
 
-    if not parsed.investment_type:
-        investment_type, investment_type_other = infer_investment_type(
-            parsed.company_name,
-            parsed.company_activity,
-            page_text,
-            parsed.raw_text,
-        )
-        parsed.investment_type = investment_type
-        parsed.investment_type_other = investment_type_other
-
+    Website enrichment is now a separate, opt-in step (see services/enrichment.py
+    and the /cards/{id}/enrich endpoints) and never runs during extraction.
+    """
     bilingual = fill_bilingual_fields({
         'person_name_ar': parsed.person_name_ar,
         'person_name_en': parsed.person_name_en,
@@ -488,8 +559,8 @@ def _finalize(parsed: BusinessCardData) -> BusinessCardData:
         'company_name_ar': parsed.company_name_ar,
         'company_name_en': parsed.company_name_en,
     })
-    for field, value in bilingual.items():
-        setattr(parsed, field, value)
+    for field_name, value in bilingual.items():
+        setattr(parsed, field_name, value)
 
     parsed.person_name = _combine_bilingual(parsed.person_name_ar, parsed.person_name_en, parsed.person_name)
     parsed.job_title = _combine_bilingual(parsed.job_title_ar, parsed.job_title_en, parsed.job_title)
@@ -497,34 +568,36 @@ def _finalize(parsed: BusinessCardData) -> BusinessCardData:
 
     if not parsed.person_name or not parsed.company_name or not parsed.mobile_numbers:
         parsed.needs_review = True
-    elif parsed.confidence >= 0.75 and not parsed.review_notes:
+    elif parsed.confidence >= 0.75 and not parsed.review_notes and not parsed.review_fields:
         parsed.needs_review = False
 
     return parsed
 
 
-def extract_business_card(front_image: str | Path, back_image: str | Path | None = None) -> BusinessCardData:
+def extract_business_card(front_image: str | Path, back_image: str | Path | None = None) -> ExtractionResult:
+    """Extract a business card in a SINGLE Gemini request.
+
+    Front is sufficient; back is optional and, when present, is sent together
+    with the front in the same request (never a separate call, never a third
+    merge call). Returns the parsed data plus usage/cost metadata.
+    """
     if not gemini_key_manager.has_keys():
         raise ExtractionError('لم يتم إعداد مفتاح Gemini API على الخادم.', category='missing_gemini_api_key', status_code=502, recoverable=False)
 
     started = time.perf_counter()
-    context = {
-        'requests_made': 0,
-        'max_requests': int(getattr(settings, 'GEMINI_MAX_REQUESTS_PER_CARD', 3)),
-        'tried_key_indexes': set(),
-    }
-    parsed, strategy = _extract_with_fallback(front_image, back_image, context=context)
+    context = {'requests_made': 0, 'tried_key_indexes': set()}
+    result = _extract_single_call(front_image, back_image, context)
+
     qr_payloads = _decode_qr_images([front_image, *([back_image] if back_image else [])])
+    parsed = result.data
     if qr_payloads:
         parsed = _merge_qr(parsed, _qr_payloads_to_data(qr_payloads))
     parsed = _finalize(_postprocess(parsed))
+    result.data = parsed
+
     logger.info(
-        'business_card_extracted strategy=%s elapsed_ms=%d qr_count=%d gemini_requests=%d needs_review=%s confidence=%.2f',
-        strategy,
-        int((time.perf_counter() - started) * 1000),
-        len(qr_payloads),
-        context.get('requests_made', 0),
-        parsed.needs_review,
-        parsed.confidence,
+        'business_card_extracted elapsed_ms=%d qr_count=%d gemini_requests=%d retries=%d needs_review=%s confidence=%.2f',
+        int((time.perf_counter() - started) * 1000), len(qr_payloads),
+        result.meta.request_count, result.meta.retry_number, parsed.needs_review, parsed.confidence,
     )
-    return parsed
+    return result

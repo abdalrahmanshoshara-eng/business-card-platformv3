@@ -167,11 +167,57 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '').strip()
 GEMINI_MODEL = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash').strip() or 'gemini-2.5-flash'
 ENABLE_WEBSITE_ENRICHMENT = os.getenv('ENABLE_WEBSITE_ENRICHMENT', 'true').lower() == 'true'
 ALLOW_GEMINI_WEBSITE_CLASSIFICATION = os.getenv('ALLOW_GEMINI_WEBSITE_CLASSIFICATION', 'false').lower() == 'true'
+# How long a cached CompanyDomainEnrichment result is considered fresh.
+WEBSITE_ENRICHMENT_TTL_DAYS = int(os.getenv('WEBSITE_ENRICHMENT_TTL_DAYS', '90'))
 GEMINI_API_KEYS = [k.strip() for k in os.getenv('GEMINI_API_KEYS', '').split(',') if k.strip()]
 if not GEMINI_API_KEYS and GEMINI_API_KEY:
     # Backward compatibility with old single-key deployments.
     GEMINI_API_KEYS = [GEMINI_API_KEY]
 GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60'))
 GEMINI_MAX_REQUESTS_PER_CARD = int(os.getenv('GEMINI_MAX_REQUESTS_PER_CARD', '3'))
+
+# ── Card extraction tuning (central config — do not scatter these numbers) ──
+# Card extraction is a structured-extraction task, not open-ended reasoning, so
+# we keep temperature at 0, cap the output tokens to the JSON schema size, and
+# minimise the thinking budget to reduce cost and latency.
+GEMINI_CARD_MODEL = os.getenv('GEMINI_CARD_MODEL', '').strip() or GEMINI_MODEL
+# Must comfortably fit the whole JSON schema incl. Arabic raw_text (Arabic is
+# token-heavy). Too low → the model hits MAX_TOKENS mid-JSON and extraction
+# fails with a generic error. On truncation the extractor auto-retries with a
+# larger budget, so this is a floor, not a hard cap.
+GEMINI_CARD_MAX_OUTPUT_TOKENS = int(os.getenv('GEMINI_CARD_MAX_OUTPUT_TOKENS', '2048'))
+GEMINI_CARD_TEMPERATURE = float(os.getenv('GEMINI_CARD_TEMPERATURE', '0'))
+# Thinking budget in tokens. 0 disables thinking for models that support it
+# (e.g. gemini-2.5-flash). Set to -1 to let the model decide (dynamic).
+GEMINI_CARD_THINKING_BUDGET = int(os.getenv('GEMINI_CARD_THINKING_BUDGET', '0'))
+# Bounded retry for transient Gemini errors only (429/5xx/timeout).
+GEMINI_CARD_MAX_RETRIES = int(os.getenv('GEMINI_CARD_MAX_RETRIES', '2'))
+GEMINI_CARD_RETRY_BASE_DELAY = float(os.getenv('GEMINI_CARD_RETRY_BASE_DELAY', '0.75'))
+
+# Image preprocessing sent to Gemini (the optimised copy, not the archived one).
+GEMINI_CARD_IMAGE_MAX_DIMENSION = int(os.getenv('GEMINI_CARD_IMAGE_MAX_DIMENSION', '1800'))
+GEMINI_CARD_IMAGE_QUALITY = int(os.getenv('GEMINI_CARD_IMAGE_QUALITY', '82'))
+# Hard ceiling for the optimised image sent to Gemini (defensive; the resize
+# usually keeps files well under this).
+GEMINI_CARD_IMAGE_MAX_BYTES = int(os.getenv('GEMINI_CARD_IMAGE_MAX_BYTES', str(4 * 1024 * 1024)))
+
+# ── Gemini pricing (USD per 1,000,000 tokens) ──────────────────────────────
+# Estimation only — the authoritative bill comes from Google. Prices change, so
+# keep them here (or override with GEMINI_PRICING_JSON) rather than in code.
+# Format: {"model-name": {"input": <usd_per_1M>, "output": <usd_per_1M>}}.
+_DEFAULT_GEMINI_PRICING = {
+    'gemini-2.5-flash': {'input': '0.30', 'output': '2.50'},
+    'gemini-2.5-flash-lite': {'input': '0.10', 'output': '0.40'},
+    'gemini-2.5-pro': {'input': '1.25', 'output': '10.00'},
+    'gemini-2.0-flash': {'input': '0.10', 'output': '0.40'},
+    'gemini-1.5-flash': {'input': '0.075', 'output': '0.30'},
+}
+try:
+    import json as _json
+
+    _override = os.getenv('GEMINI_PRICING_JSON', '').strip()
+    GEMINI_PRICING = {**_DEFAULT_GEMINI_PRICING, **(_json.loads(_override) if _override else {})}
+except Exception:  # pragma: no cover - defensive: never crash settings on bad JSON
+    GEMINI_PRICING = dict(_DEFAULT_GEMINI_PRICING)
 
 APPEND_SLASH = False

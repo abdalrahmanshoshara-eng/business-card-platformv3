@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import logging
 import re
 import tempfile
 import time
+import uuid
 
-from django.db import DatabaseError, IntegrityError
+from datetime import timedelta
+
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
+from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -17,9 +22,9 @@ from rest_framework.decorators import action, api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import BusinessCard
-from .serializers import BusinessCardSerializer
-from .services.extractor import ExtractionError, extract_business_card
+from .models import BusinessCard, CompanyDomainEnrichment, ExtractionRequest, GeminiUsageLog
+from .serializers import BusinessCardSerializer, CompanyDomainEnrichmentSerializer
+from .services.extractor import EXTRACTION_SCHEMA_VERSION, ExtractionError, extract_business_card
 from .services.image_processing import preprocess_image
 from .services.normalization import duplicate_reason
 from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
@@ -31,8 +36,13 @@ from .services.duplicates import (
     salt_duplicate_hash,
 )
 from .services.security import excel_safe, validate_image_upload
+from .services.usage import log_gemini_usage
+from .services.enrichment import get_cached_enrichment, run_enrichment
 
 logger = logging.getLogger(__name__)
+
+# A request stuck in "processing" longer than this (crashed worker) is reclaimable.
+EXTRACTION_PROCESSING_STALE_SECONDS = 180
 
 
 def _truthy(value) -> bool:
@@ -270,8 +280,101 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             save_kwargs['back_image'] = back
         serializer.save(**save_kwargs)
 
+    # ── Idempotency helpers ────────────────────────────────────────────────
+    @staticmethod
+    def _idempotency_key(request) -> str:
+        key = (request.headers.get('X-Idempotency-Key') or request.data.get('idempotency_key') or '').strip()
+        return key[:128] if key else uuid.uuid4().hex
+
+    @staticmethod
+    def _image_fingerprint(front_bytes: bytes, back_bytes: bytes, visit_website: bool = False) -> str:
+        hasher = hashlib.sha256()
+        hasher.update(EXTRACTION_SCHEMA_VERSION.encode('utf-8'))
+        # The website-visit choice changes the intended output, so it is part of
+        # the fingerprint: the same image with a different choice is a distinct op.
+        hasher.update(b'|visit|1' if visit_website else b'|visit|0')
+        hasher.update(b'|front|')
+        hasher.update(front_bytes)
+        if back_bytes:
+            hasher.update(b'|back|')
+            hasher.update(back_bytes)
+        return hasher.hexdigest()
+
+    @staticmethod
+    def _replay(payload: dict) -> dict:
+        data = dict(payload or {})
+        data['idempotent_replay'] = True
+        return data
+
+    def _claim_extraction_request(self, user, idem_key: str, fingerprint: str):
+        """Atomically claim (or replay) an extraction operation.
+
+        Returns (extraction_request, early_response). ``early_response`` is set
+        when the caller must NOT run Gemini again (completed replay, an in-flight
+        duplicate, or a byte-identical prior upload).
+        """
+        now = timezone.now()
+        with transaction.atomic():
+            req, created = ExtractionRequest.objects.select_for_update().get_or_create(
+                owner=user,
+                idempotency_key=idem_key,
+                defaults={
+                    'image_fingerprint': fingerprint,
+                    'schema_version': EXTRACTION_SCHEMA_VERSION,
+                    'status': ExtractionRequest.STATUS_PROCESSING,
+                },
+            )
+            if not created:
+                if req.status == ExtractionRequest.STATUS_COMPLETED and req.result:
+                    return req, Response(self._replay(req.result), status=status.HTTP_200_OK)
+                if req.status == ExtractionRequest.STATUS_PROCESSING and \
+                        (now - req.updated_at).total_seconds() < EXTRACTION_PROCESSING_STALE_SECONDS:
+                    return req, Response(
+                        {'detail': 'العملية قيد المعالجة حالياً. لا حاجة لإعادة الإرسال.',
+                         'error_type': 'extraction_in_progress', 'extraction_status': 'processing'},
+                        status=status.HTTP_202_ACCEPTED,
+                    )
+                # failed / pending / stale-processing → reclaim this key
+                req.status = ExtractionRequest.STATUS_PROCESSING
+                req.image_fingerprint = fingerprint
+                req.error_code = ''
+                req.error_message = ''
+                req.save(update_fields=['status', 'image_fingerprint', 'error_code', 'error_message', 'updated_at'])
+
+        # Byte-identical images processed before (under any key) → replay, no Gemini.
+        prior = (
+            ExtractionRequest.objects
+            .filter(owner=user, image_fingerprint=fingerprint, status=ExtractionRequest.STATUS_COMPLETED)
+            .exclude(pk=req.pk)
+            .order_by('-created_at')
+            .first()
+        )
+        if prior and prior.result:
+            req.result = prior.result
+            req.card = prior.card
+            req.status = ExtractionRequest.STATUS_COMPLETED
+            req.save(update_fields=['result', 'card', 'status', 'updated_at'])
+            return req, Response(self._replay(prior.result), status=status.HTTP_200_OK)
+
+        return req, None
+
+    def _complete_extraction_request(self, req, payload: dict, card=None) -> None:
+        req.status = ExtractionRequest.STATUS_COMPLETED
+        req.result = payload
+        if card is not None:
+            req.card = card
+        req.save(update_fields=['status', 'result', 'card', 'updated_at'])
+
+    def _fail_extraction_request(self, req, *, code: str, message: str) -> None:
+        req.status = ExtractionRequest.STATUS_FAILED
+        req.error_code = (code or '')[:64]
+        req.error_message = (message or '')[:2000]
+        req.save(update_fields=['status', 'error_code', 'error_message', 'updated_at'])
+
     @action(detail=False, methods=['post'], url_path='extract')
     def extract(self, request):
+        from django.conf import settings as _settings
+
         endpoint_started = time.perf_counter()
         front = request.FILES.get('front')
         back = request.FILES.get('back')
@@ -283,24 +386,43 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             return _validation_error_response(exc)
 
+        # Fingerprint from the raw uploaded bytes (before preprocessing) so the
+        # same file always maps to the same fingerprint.
+        front.seek(0)
+        front_bytes = front.read()
+        front.seek(0)
+        back_bytes = b''
+        if back:
+            back.seek(0)
+            back_bytes = back.read()
+            back.seek(0)
+        # Per-extraction choice: visit the company website to determine activity.
+        visit_website = _truthy(request.data.get('visit_website'))
+        fingerprint = self._image_fingerprint(front_bytes, back_bytes, visit_website)
+        idem_key = self._idempotency_key(request)
+
+        extraction_request, early = self._claim_extraction_request(request.user, idem_key, fingerprint)
+        if early is not None:
+            return early
+
+        model_name = _settings.GEMINI_CARD_MODEL
         with tempfile.TemporaryDirectory() as tmpdir:
             preprocessing_started = time.perf_counter()
             try:
                 front_path = os.path.join(tmpdir, front.name or 'front.jpg')
                 with open(front_path, 'wb') as file_handle:
-                    for chunk in front.chunks():
-                        file_handle.write(chunk)
+                    file_handle.write(front_bytes)
                 front_processed = preprocess_image(front_path)
 
                 back_processed = None
                 if back:
                     back_path = os.path.join(tmpdir, back.name or 'back.jpg')
                     with open(back_path, 'wb') as file_handle:
-                        for chunk in back.chunks():
-                            file_handle.write(chunk)
+                        file_handle.write(back_bytes)
                     back_processed = preprocess_image(back_path)
             except Exception:
                 logger.exception('card_preprocessing_failed')
+                self._fail_extraction_request(extraction_request, code='preprocessing_error', message='preprocessing failed')
                 return Response(
                     {'detail': 'تعذرت معالجة صورة الكرت. يرجى تجربة صورة أوضح أو أصغر.', 'error_type': 'preprocessing_error'},
                     status=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -315,38 +437,40 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
 
             extraction_started = time.perf_counter()
             try:
-                extracted = extract_business_card(front_processed, back_processed).model_dump()
+                result = extract_business_card(front_processed, back_processed)
+                extracted = result.data.model_dump()
             except ExtractionError as exc:
                 logger.warning(
                     'card_extraction_failed category=%s status=%s recoverable=%s elapsed_ms=%d',
-                    exc.category,
-                    exc.status_code,
-                    getattr(exc, 'recoverable', True),
+                    exc.category, exc.status_code, getattr(exc, 'recoverable', True),
                     int((time.perf_counter() - extraction_started) * 1000),
                 )
+                self._fail_extraction_request(extraction_request, code=exc.category, message=str(exc))
+                log_gemini_usage(
+                    operation_type=GeminiUsageLog.OP_CARD_EXTRACTION,
+                    model_name=model_name, usage=None, owner=request.user,
+                    extraction_request=extraction_request, request_status='failed',
+                    error_type=exc.category, latency_ms=int((time.perf_counter() - extraction_started) * 1000),
+                )
                 return Response(
-                    {
-                        'detail': str(exc),
-                        'error_type': exc.category,
-                        'recoverable': getattr(exc, 'recoverable', True),
-                    },
+                    {'detail': str(exc), 'error_type': exc.category, 'recoverable': getattr(exc, 'recoverable', True)},
                     status=exc.status_code,
                 )
             except Exception as exc:
                 msg = str(exc)
                 logger.exception('card_extraction_unhandled elapsed_ms=%d', int((time.perf_counter() - extraction_started) * 1000))
+                self._fail_extraction_request(extraction_request, code='unknown_extraction_error', message=msg[:200])
+                log_gemini_usage(
+                    operation_type=GeminiUsageLog.OP_CARD_EXTRACTION, model_name=model_name, usage=None,
+                    owner=request.user, extraction_request=extraction_request, request_status='failed',
+                    error_type='unknown_extraction_error',
+                )
                 if '429' in msg or 'RESOURCE_EXHAUSTED' in msg:
-                    retry_seconds = None
-                    m = re.search(r'retry[^\d]*(\d+(?:\.\d+)?)\s*s', msg, re.I)
-                    if m:
-                        retry_seconds = int(float(m.group(1))) + 1
-                    detail = 'تم تجاوز حد Gemini أو معدل الطلبات.'
-                    if retry_seconds:
-                        detail += f' يرجى الانتظار {retry_seconds} ثانية ثم المحاولة مجدداً.'
-                    return Response({'detail': detail, 'error_type': 'gemini_quota_exceeded'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+                    return Response({'detail': 'تم تجاوز حد Gemini أو معدل الطلبات.', 'error_type': 'gemini_quota_exceeded'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
                 return Response({'detail': 'فشل استخراج البيانات من Gemini. يرجى المحاولة مجدداً.', 'error_type': 'unknown_extraction_error'}, status=status.HTTP_502_BAD_GATEWAY)
 
         prepared = _prepare_data(extracted)
+        meta = result.meta
         # Duplicate lookup is scoped to the current user's own cards.
         existing = find_existing_duplicate(prepared, self._scoped())
 
@@ -355,13 +479,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 *merge_missing_card_data(existing, prepared),
                 *merge_missing_card_images(existing, front, back),
             ]
-            logger.info(
-                'card_duplicate_handled elapsed_ms=%d existing_id=%s updated_fields=%s',
-                int((time.perf_counter() - endpoint_started) * 1000),
-                existing.id,
-                updated_fields,
-            )
-            return Response({
+            payload = {
                 'duplicate': True,
                 'saved': bool(updated_fields),
                 'updated': bool(updated_fields),
@@ -369,7 +487,43 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 'reason': duplicate_reason(prepared, existing),
                 'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
                 'extracted_data': extracted,
-            }, status=status.HTTP_200_OK)
+            }
+            self._complete_extraction_request(extraction_request, payload, card=existing)
+            log_gemini_usage(
+                operation_type=GeminiUsageLog.OP_CARD_EXTRACTION, model_name=meta.model_name, usage=meta.usage,
+                owner=request.user, card=existing, extraction_request=extraction_request,
+                request_count=meta.request_count, retry_number=meta.retry_number, latency_ms=meta.latency_ms,
+            )
+            logger.info('card_duplicate_handled existing_id=%s updated_fields=%s', existing.id, updated_fields)
+            return Response(payload, status=status.HTTP_200_OK)
+
+        # User's per-extraction choice: visit the company website to determine
+        # its activity. Enrichment is cached per domain, so a repeated company
+        # costs nothing extra. If the activity stays undetermined (whether the
+        # user skipped the visit or the visit found nothing), the card is flagged
+        # for review.
+        enrichment_payload = None
+        if visit_website and prepared.get('website'):
+            try:
+                enr_row, enr_reused = run_enrichment(prepared['website'], owner=request.user, card=None)
+            except Exception:
+                logger.exception('inline_enrichment_failed website=%s', prepared.get('website'))
+                enr_row, enr_reused = None, False
+            if enr_row is not None:
+                enrichment_payload = {'reused': enr_reused, 'status': enr_row.status}
+                if enr_row.status == CompanyDomainEnrichment.STATUS_COMPLETED and not (prepared.get('company_activity') or '').strip():
+                    inferred = (enr_row.industry or enr_row.company_description or '').strip()
+                    if inferred:
+                        prepared['company_activity'] = inferred[:500]
+
+        if not (prepared.get('company_activity') or '').strip():
+            prepared['needs_review'] = True
+            review_fields = list(prepared.get('review_fields') or [])
+            if 'company_activity' not in review_fields:
+                review_fields.append('company_activity')
+            prepared['review_fields'] = review_fields
+            note = 'لم يُحدَّد نشاط الشركة' + ('' if visit_website else ' (لم تُطلب زيارة الموقع)')
+            prepared['review_notes'] = ' | '.join(p for p in [prepared.get('review_notes', ''), note] if p)
 
         front.seek(0)
         if back:
@@ -391,7 +545,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                     *merge_missing_card_data(existing, prepared),
                     *merge_missing_card_images(existing, front, back),
                 ]
-                return Response({
+                payload = {
                     'duplicate': True,
                     'saved': bool(updated_fields),
                     'updated': bool(updated_fields),
@@ -399,25 +553,84 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                     'reason': duplicate_reason(prepared, existing),
                     'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
                     'extracted_data': extracted,
-                }, status=status.HTTP_200_OK)
+                }
+                self._complete_extraction_request(extraction_request, payload, card=existing)
+                log_gemini_usage(
+                    operation_type=GeminiUsageLog.OP_CARD_EXTRACTION, model_name=meta.model_name, usage=meta.usage,
+                    owner=request.user, card=existing, extraction_request=extraction_request,
+                    request_count=meta.request_count, retry_number=meta.retry_number, latency_ms=meta.latency_ms,
+                )
+                return Response(payload, status=status.HTTP_200_OK)
+            self._fail_extraction_request(extraction_request, code='database_integrity_error', message='integrity error')
             return Response(
                 {'detail': 'تعذر حفظ الكرت بسبب تعارض في قاعدة البيانات. يرجى المحاولة مرة أخرى.', 'error_type': 'database_integrity_error'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         except DatabaseError:
             logger.exception('card_save_failed')
+            self._fail_extraction_request(extraction_request, code='database_save_error', message='db error')
             return Response(
                 {'detail': 'تعذر حفظ بيانات الكرت في قاعدة البيانات.', 'error_type': 'database_save_error'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        logger.info('card_extract_endpoint_done elapsed_ms=%d card_id=%s', int((time.perf_counter() - endpoint_started) * 1000), card.id)
-        return Response({
+        payload = {
             'duplicate': False,
             'saved': True,
             'card': BusinessCardSerializer(card, context={'request': request}).data,
             'message': f'تم حفظ الكرت كسجل رقم {card.sequence_number}',
-        }, status=status.HTTP_201_CREATED)
+            'website_visited': bool(visit_website),
+        }
+        if enrichment_payload is not None:
+            payload['enrichment'] = enrichment_payload
+        self._complete_extraction_request(extraction_request, payload, card=card)
+        # Cost logging must never break the (already saved) card.
+        log_gemini_usage(
+            operation_type=GeminiUsageLog.OP_CARD_EXTRACTION, model_name=meta.model_name, usage=meta.usage,
+            owner=request.user, card=card, extraction_request=extraction_request,
+            request_count=meta.request_count, retry_number=meta.retry_number, latency_ms=meta.latency_ms,
+        )
+        logger.info('card_extract_endpoint_done elapsed_ms=%d card_id=%s', int((time.perf_counter() - endpoint_started) * 1000), card.id)
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+    # ── Website enrichment (opt-in, cached per canonical domain) ────────────
+    def _enrichment_payload(self, request, card, row, reused: bool) -> dict:
+        data = {'card_id': card.id, 'reused': reused}
+        if row is None:
+            data['status'] = 'not_requested'
+            data['detail'] = 'لا يوجد موقع إلكتروني على هذا الكرت.'
+            return data
+        data['enrichment'] = CompanyDomainEnrichmentSerializer(row).data
+        data['status'] = row.status
+        if reused and row.status == 'completed':
+            data['detail'] = 'تم عرض نتيجة محفوظة مسبقاً لنفس نطاق الشركة دون استدعاء جديد.'
+        return data
+
+    @action(detail=True, methods=['get'], url_path='enrichment')
+    def enrichment_status(self, request, pk=None):
+        card = self.get_object()
+        row = get_cached_enrichment(card.website) if card.website else None
+        reused = bool(row and row.is_fresh())
+        return Response(self._enrichment_payload(request, card, row, reused))
+
+    @action(detail=True, methods=['post'], url_path='enrich')
+    def enrich(self, request, pk=None):
+        card = self.get_object()
+        if not card.website:
+            return Response(
+                {'detail': 'لا يوجد موقع إلكتروني على هذا الكرت لإثرائه.', 'error_type': 'no_website', 'status': 'unavailable'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        force = _truthy(request.data.get('refresh') or request.data.get('force'))
+        try:
+            row, reused = run_enrichment(card.website, owner=request.user, card=card, force_refresh=force)
+        except Exception:
+            logger.exception('enrichment_endpoint_failed card_id=%s', card.id)
+            return Response(
+                {'detail': 'تعذر إثراء بيانات الشركة حالياً.', 'error_type': 'enrichment_error', 'status': 'failed'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response(self._enrichment_payload(request, card, row, reused))
 
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):

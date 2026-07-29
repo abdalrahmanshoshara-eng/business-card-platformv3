@@ -4,27 +4,52 @@ import logging
 import time
 from pathlib import Path
 
+from django.conf import settings
 from PIL import Image, ImageFilter, ImageOps, ImageStat
 
 logger = logging.getLogger(__name__)
 
-MAX_LONG_EDGE = 1600
-JPEG_QUALITY = 85
+
+def _max_long_edge() -> int:
+    return int(getattr(settings, 'GEMINI_CARD_IMAGE_MAX_DIMENSION', 1800))
+
+
+def _jpeg_quality() -> int:
+    return int(getattr(settings, 'GEMINI_CARD_IMAGE_QUALITY', 82))
+
+
+def _max_output_bytes() -> int:
+    return int(getattr(settings, 'GEMINI_CARD_IMAGE_MAX_BYTES', 4 * 1024 * 1024))
+
+
+def _save_within_size_ceiling(img: Image.Image, output_path: Path) -> None:
+    """Save JPEG, re-compressing at lower quality if it exceeds the ceiling.
+
+    This never upscales and never drops quality below a floor that would make
+    small print unreadable (55).
+    """
+    quality = _jpeg_quality()
+    img.save(output_path, format='JPEG', quality=quality, optimize=True)
+    ceiling = _max_output_bytes()
+    while output_path.stat().st_size > ceiling and quality > 55:
+        quality -= 8
+        img.save(output_path, format='JPEG', quality=quality, optimize=True)
 
 
 def _pil_fallback(input_path: Path, output_path: Path) -> dict:
     img = Image.open(input_path)
     img = ImageOps.exif_transpose(img).convert('RGB')
     original_size = img.size
+    max_long_edge = _max_long_edge()
     longest = max(img.size)
-    if longest > MAX_LONG_EDGE:
-        scale = MAX_LONG_EDGE / longest
+    if longest > max_long_edge:  # never upscale
+        scale = max_long_edge / longest
         img = img.resize((int(img.width * scale), int(img.height * scale)), Image.Resampling.LANCZOS)
     gray_mean = ImageStat.Stat(img.convert('L')).mean[0]
     if gray_mean < 105:
         img = ImageOps.autocontrast(img, cutoff=1)
     img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=30, threshold=5))
-    img.save(output_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+    _save_within_size_ceiling(img, output_path)
     return {
         'original_size': original_size,
         'final_size': img.size,
@@ -165,14 +190,15 @@ def preprocess_image(input_path: str | Path) -> Path:
         image, dark_card = _enhance(image)
         height, width = image.shape[:2]
         longest = max(width, height)
-        if longest > MAX_LONG_EDGE:
-            scale = MAX_LONG_EDGE / longest
+        max_long_edge = _max_long_edge()
+        if longest > max_long_edge:  # never upscale
+            scale = max_long_edge / longest
             image = cv2.resize(image, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
 
         final_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(final_rgb)
         img = img.filter(ImageFilter.UnsharpMask(radius=1, percent=25, threshold=5))
-        img.save(output_path, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+        _save_within_size_ceiling(img, output_path)
         metadata = {
             'original_size': original_size,
             'final_size': img.size,

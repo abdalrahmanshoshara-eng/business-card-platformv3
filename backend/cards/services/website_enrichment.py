@@ -157,56 +157,6 @@ def fetch_website_text(url: str, timeout: float = 12.0) -> tuple[str, str]:
     return '', 'تعذرت زيارة الموقع: ' + ' | '.join(errors[:4])
 
 
-def _keyword_activity(page_text: str, card_text: str = '') -> str:
-    combined = f'{page_text} {card_text}'
-    lowered = combined.lower()
-    if any(word in lowered for word in ('mining', 'geological', 'wells', 'tunnels')) or any(word in combined for word in ('التعدين', 'المسح الجيولوجي', 'الأنفاق', 'الآبار')):
-        return 'أعمال التعدين وقطع الصخور، المسح الجيولوجي، الاستكشاف، حفر الآبار والأنفاق'
-
-    mappings = [
-        (('software', 'web development', 'it solutions', 'technology'), 'تطوير البرمجيات وحلول تقنية المعلومات'),
-        (('marketing', 'branding', 'advertising', 'social media'), 'التسويق الرقمي وبناء وإدارة العلامات التجارية'),
-        (('construction', 'contracting', 'civil works', 'infrastructure'), 'المقاولات والإنشاءات وأعمال البنية التحتية'),
-        (('real estate', 'property', 'brokerage'), 'الخدمات العقارية والوساطة وإدارة الأملاك'),
-        (('logistics', 'shipping', 'freight', 'transport'), 'الخدمات اللوجستية والشحن والنقل'),
-    ]
-    for keywords, label in mappings:
-        if any(keyword in lowered for keyword in keywords):
-            return label
-    return ''
-
-
-def infer_company_activity(company_name: str, website: str, page_text: str = '', card_text: str = '') -> str:
-    deterministic = _keyword_activity(page_text, card_text)
-    if deterministic:
-        return deterministic
-    if not getattr(settings, 'ALLOW_GEMINI_WEBSITE_CLASSIFICATION', False):
-        return ''
-
-    prompt = f"""
-استخرج نشاط الشركة الحقيقي بالعربية من النص المتاح.
-أرجع عبارة عربية واحدة فقط من 6 إلى 18 كلمة، بدون شرح.
-لا تستخدم عبارات عامة مثل شركة متخصصة أو خدمات متنوعة.
-اسم الشركة: {company_name or 'غير معروف'}
-الموقع: {website or 'غير معروف'}
-نص الموقع: {page_text[:15000] if page_text else 'غير متاح'}
-نص الكرت: {card_text[:3000] if card_text else 'غير متاح'}
-"""
-    try:
-        client = genai.Client(api_key=(getattr(settings, 'GEMINI_API_KEYS', []) or [getattr(settings, 'GEMINI_API_KEY', '')])[0])
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(temperature=0, max_output_tokens=120),
-        )
-        text = re.sub(r'\s+', ' ', getattr(response, 'text', '') or '').strip().strip('"')
-        if len(text) < 20 or text in {'شركة متخصصة', 'خدمات متنوعة', 'غير معروف'}:
-            return ''
-        return text[:260]
-    except Exception:
-        return ''
-
-
 def infer_investment_type(company_name: str, company_activity: str = '', page_text: str = '', card_text: str = '') -> tuple[str, str]:
     combined = ' '.join(filter(None, [company_name, company_activity, page_text[:5000], card_text[:3000]])).lower()
     for investment_type, keywords in INVESTMENT_TYPE_KEYWORDS:

@@ -5,7 +5,7 @@ import re
 
 from rest_framework import serializers
 
-from .models import BusinessCard
+from .models import BusinessCard, CompanyDomainEnrichment
 from .services.normalization import normalize_website
 
 
@@ -43,7 +43,7 @@ class BusinessCardSerializer(serializers.ModelSerializer):
             'company_name', 'company_name_ar', 'company_name_en',
             'mobile_numbers', 'emails', 'website', 'address', 'country', 'company_activity',
             'investment_type', 'investment_type_other',
-            'raw_text', 'confidence', 'needs_review', 'review_notes', 'website_visit_note',
+            'raw_text', 'confidence', 'needs_review', 'review_notes', 'review_fields', 'website_visit_note',
             'status', 'front_image', 'back_image', 'front_image_url', 'back_image_url',
             'created_at', 'updated_at',
         ]
@@ -69,3 +69,14 @@ class BusinessCardSerializer(serializers.ModelSerializer):
         if obj.back_image and obj.pk:
             return f'/api/cards/{obj.pk}/image/back'
         return ''
+
+
+class CompanyDomainEnrichmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CompanyDomainEnrichment
+        fields = [
+            'canonical_domain', 'source_url', 'company_name', 'company_description',
+            'industry', 'services', 'products', 'countries', 'language',
+            'status', 'model_name', 'enriched_at', 'refresh_after', 'last_error',
+        ]
+        read_only_fields = fields

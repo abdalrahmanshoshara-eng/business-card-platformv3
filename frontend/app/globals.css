@@ -587,6 +587,43 @@ button.gold:hover:not(:disabled),
   border-color: rgba(23, 109, 76, .25);
 }
 
+.visit-website-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--gold-border);
+  border-radius: 14px;
+  background: rgba(199, 166, 107, .08);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.visit-website-option input[type="checkbox"] {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.status-box.warning {
+  color: #8a6d1a;
+  background: #fdf6e3;
+  border-color: rgba(199, 166, 107, .45);
+}
+
+/* Fields Gemini flagged for human review (needs_review / review_fields). */
+.review-flagged textarea,
+.review-flagged input {
+  border-color: #d9a441 !important;
+  background: #fdf6e3;
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, .35);
+}
+
 .hidden {
   display: none !important;
 }

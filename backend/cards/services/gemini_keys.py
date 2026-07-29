@@ -28,7 +28,6 @@ class GeminiKeyManager:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._states: dict[int, KeyState] = {}
-        self._cursor = 0
         self._keys_signature: tuple[str, ...] = ()
 
     def _keys(self) -> list[str]:
@@ -38,11 +37,17 @@ class GeminiKeyManager:
             if signature != self._keys_signature:
                 self._keys_signature = signature
                 self._states = {index: KeyState(index=index) for index in range(len(keys))}
-                self._cursor = 0
         return keys
 
     def has_keys(self) -> bool:
         return bool(self._keys())
+
+    def reset(self) -> None:
+        """Clear all runtime key state (disabled/cooldown). Intended for tests
+        and for forcing a fresh evaluation after keys are reconfigured."""
+        with self._lock:
+            self._states = {}
+            self._keys_signature = ()
 
     def available_count(self) -> int:
         keys = self._keys()
@@ -55,15 +60,19 @@ class GeminiKeyManager:
             )
 
     def get_candidate(self, tried_indexes: set[int]) -> tuple[int, str] | None:
+        """Strict-priority selection: always prefer the FIRST key in
+        ``GEMINI_API_KEYS`` order, only moving to the next one when an earlier key
+        is disabled (invalid), on cooldown (rate-limited/quota), or already tried
+        in this same request. This is deterministic priority, not round-robin
+        load-balancing: key #2 is used only while key #1 is unavailable.
+        """
         keys = self._keys()
         if not keys:
             return None
 
         now = time.time()
         with self._lock:
-            total = len(keys)
-            for offset in range(total):
-                index = (self._cursor + offset) % total
+            for index in range(len(keys)):
                 state = self._states[index]
                 if index in tried_indexes:
                     continue
@@ -71,7 +80,6 @@ class GeminiKeyManager:
                     continue
                 if state.cooldown_until > now:
                     continue
-                self._cursor = (index + 1) % total
                 logger.info('gemini_key_selected selected_key_index=%s key_attempt_count=%s', index, len(tried_indexes) + 1)
                 return index, keys[index]
         return None
