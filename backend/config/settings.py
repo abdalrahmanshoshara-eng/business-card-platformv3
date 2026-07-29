@@ -174,7 +174,9 @@ if not GEMINI_API_KEYS and GEMINI_API_KEY:
     # Backward compatibility with old single-key deployments.
     GEMINI_API_KEYS = [GEMINI_API_KEY]
 GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60'))
-GEMINI_MAX_REQUESTS_PER_CARD = int(os.getenv('GEMINI_MAX_REQUESTS_PER_CARD', '3'))
+# NOTE: the old per-card "request budget" (GEMINI_MAX_REQUESTS_PER_CARD) was
+# removed — extraction now makes a single Gemini call, so there is no budget to
+# exceed. The variable is intentionally no longer read.
 
 # ── Card extraction tuning (central config — do not scatter these numbers) ──
 # Card extraction is a structured-extraction task, not open-ended reasoning, so
