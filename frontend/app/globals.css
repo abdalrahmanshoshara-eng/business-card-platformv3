@@ -2220,7 +2220,14 @@ button:disabled,
    the mobile drawer behaviour (≤860px) defined above is left untouched.
    ═══════════════════════════════════════════════════════════════════ */
 @media (min-width: 861px) {
+  /* Single source of truth for the sidebar width so the toggle can sit exactly
+     on its inner edge. */
+  .app-shell {
+    --sidebar-w: 288px;
+  }
+
   .app-sidebar {
+    width: var(--sidebar-w);
     overflow: hidden;
     transition: width .28s var(--ease), padding .28s var(--ease),
                 opacity .22s var(--ease), border-color .28s var(--ease);
@@ -2246,19 +2253,19 @@ button:disabled,
     top: 50%;
     /* Locked with !important on every state so the tab NEVER moves on hover. */
     transform: translateY(-50%) !important;
-    inset-inline-start: 288px;      /* flush with the sidebar's inner edge */
-    inset-inline-end: auto;
+    /* The app is RTL and the sidebar hugs the RIGHT edge, so use physical
+       `right` (not a logical property that could resolve to the wrong side on
+       a fixed element) tied to the sidebar width → always flush with its edge. */
+    right: var(--sidebar-w, 288px);
+    left: auto;
     width: 22px;
     height: 74px;
     padding: 0;
     background: linear-gradient(160deg, var(--green-header), var(--green-deep));
     color: var(--gold-hover);
     border: 1px solid var(--gold-border);
-    border-inline-start: none;      /* seamless where it meets the sidebar */
-    border-start-start-radius: 0;
-    border-end-start-radius: 0;
-    border-start-end-radius: 13px;
-    border-end-end-radius: 13px;
+    border-right: none;             /* seamless where it meets the sidebar */
+    border-radius: 13px 0 0 13px;   /* round the content-facing (left) side */
     align-items: center;
     justify-content: center;
     cursor: pointer;
@@ -2270,7 +2277,8 @@ button:disabled,
 
   /* Collapsed: the panel is gone, so the same tab waits at the screen edge. */
   .app-shell.sidebar-collapsed .sidebar-toggle {
-    inset-inline-start: 0;
+    right: 0;
+    left: auto;
   }
 
   /* Hover/focus/active: colour only — position stays pinned. */
