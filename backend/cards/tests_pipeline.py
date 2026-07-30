@@ -306,6 +306,49 @@ class RetryPolicyTests(PipelineTestCase):
         self.assertEqual(BusinessCard.objects.count(), 0)
 
 
+@override_settings(**TEST_SETTINGS)
+class AutoWelcomeOnExtractTests(PipelineTestCase):
+    def _configure(self, user):
+        from accounts.models import Profile
+        Profile.objects.update_or_create(
+            user=user,
+            defaults={'sender_email': 'me@x.com', 'welcome_subject': 'Hi', 'welcome_message': 'Welcome!'},
+        )
+
+    def test_auto_welcome_sends_when_checkbox_on_and_card_has_email(self):
+        from django.core import mail
+        client, user = auth_client()
+        self._configure(user)
+        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
+        with mock_gemini(script):
+            res = client.post('/api/cards/extract', {'front': upload(), 'send_welcome': '1'}, format='multipart')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['welcome']['status'], 'sent')
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['new@card.com'])
+        self.assertEqual(BusinessCard.objects.get().welcome_status, 'sent')
+
+    def test_no_welcome_when_flag_off(self):
+        from django.core import mail
+        client, user = auth_client()
+        self._configure(user)
+        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
+        with mock_gemini(script):
+            res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
+        self.assertNotIn('welcome', res.data)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(BusinessCard.objects.get().welcome_status, 'not_sent')
+
+    def test_auto_welcome_skipped_when_not_configured(self):
+        from django.core import mail
+        client, _ = auth_client()  # no profile config
+        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
+        with mock_gemini(script):
+            res = client.post('/api/cards/extract', {'front': upload(), 'send_welcome': '1'}, format='multipart')
+        self.assertEqual(res.data['welcome']['status'], 'skipped')
+        self.assertEqual(len(mail.outbox), 0)
+
+
 @override_settings(GEMINI_API_KEYS=['KEY1', 'KEY2', 'KEY3'])
 class GeminiKeySelectionTests(PipelineTestCase):
     def test_strict_priority_prefers_first_key(self):

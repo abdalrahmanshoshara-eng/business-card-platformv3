@@ -122,10 +122,10 @@ class ProfileView(APIView):
 
 class WelcomeTestView(APIView):
     """Send a one-off test email to an arbitrary address to verify the platform
-    mail configuration. Uses the user's welcome subject/message when set, else a
-    default test body."""
+    mail configuration. Admin-only. Uses the user's welcome subject/message when
+    set, else a default test body."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdmin]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'welcome_test'
 

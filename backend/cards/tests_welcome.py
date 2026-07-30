@@ -89,6 +89,12 @@ class SendWelcomeApiTests(TestCase):
         self.assertEqual(msg.reply_to, ['sender@example.com'])
         self.assertEqual(msg.subject, 'أهلاً')
         self.assertEqual(msg.body, 'مرحبًا بك')
+        # A styled HTML alternative is attached and frames the user's email as sender.
+        self.assertTrue(msg.alternatives)
+        html, mime = msg.alternatives[0]
+        self.assertEqual(mime, 'text/html')
+        self.assertIn('sender@example.com', html)
+        self.assertIn('مرحبًا بك', html)
         self.card.refresh_from_db()
         self.assertEqual(self.card.welcome_status, 'sent')
         self.assertEqual(self.card.welcome_sent_to, 'recipient@corp.com')
@@ -128,15 +134,24 @@ class SendWelcomeApiTests(TestCase):
         self.assertEqual(resp.status_code, 404)
 
     def test_welcome_test_endpoint_sends_to_arbitrary_email(self):
-        resp = self.client.post('/api/auth/welcome-test', {'to': 'me@test.com'}, format='json')
+        # The test-send endpoint is admin-only.
+        admin = User.objects.create_user(username='admin_send', password='x', is_staff=True)
+        configure_profile(admin)
+        resp = auth_client(admin).post('/api/auth/welcome-test', {'to': 'me@test.com'}, format='json')
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertTrue(resp.data['sent'])
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['me@test.com'])
         self.assertIn('platform@site.com', mail.outbox[0].from_email)
 
+    def test_welcome_test_endpoint_forbidden_for_regular_user(self):
+        resp = self.client.post('/api/auth/welcome-test', {'to': 'me@test.com'}, format='json')
+        self.assertIn(resp.status_code, (403, 401))
+        self.assertEqual(len(mail.outbox), 0)
+
     def test_welcome_test_endpoint_rejects_invalid_email(self):
-        resp = self.client.post('/api/auth/welcome-test', {'to': 'not-an-email'}, format='json')
+        admin = User.objects.create_user(username='admin_bad', password='x', is_staff=True)
+        resp = auth_client(admin).post('/api/auth/welcome-test', {'to': 'not-an-email'}, format='json')
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.data['error_type'], 'invalid_email')
         self.assertEqual(len(mail.outbox), 0)

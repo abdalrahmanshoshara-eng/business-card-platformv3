@@ -2113,3 +2113,120 @@ button:disabled,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESKTOP COLLAPSIBLE SIDEBAR (v3) — appended last so it wins the cascade.
+   A polished toggle that smoothly collapses the side nav on ≥861px, while
+   the mobile drawer behaviour (≤860px) defined above is left untouched.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (min-width: 861px) {
+  .app-sidebar {
+    overflow: hidden;
+    transition: width .28s var(--ease), padding .28s var(--ease),
+                opacity .22s var(--ease), border-color .28s var(--ease);
+  }
+
+  /* Collapsed: slide the panel away to zero width and fade it out. */
+  .app-shell.sidebar-collapsed .app-sidebar {
+    width: 0;
+    min-width: 0;
+    padding-inline: 0;
+    opacity: 0;
+    border-color: transparent;
+    pointer-events: none;
+  }
+
+  /* Edge tab: reads as an extension of the sidebar itself — flush against its
+     inner edge (no gap, no seam, same gradient), rounded only on the outer side
+     so it looks like a tab growing out of the panel. It stays perfectly still
+     on hover (only its colour warms), and never covers the user's name. */
+  .sidebar-toggle {
+    display: inline-flex !important;
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    inset-inline-start: 288px;      /* flush with the sidebar's inner edge */
+    inset-inline-end: auto;
+    width: 22px;
+    height: 74px;
+    padding: 0;
+    background: linear-gradient(160deg, var(--green-header), var(--green-deep));
+    color: var(--gold-hover);
+    border: 1px solid var(--gold-border);
+    border-inline-start: none;      /* seamless where it meets the sidebar */
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-start-end-radius: 13px;
+    border-end-end-radius: 13px;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 46;
+    box-shadow: -5px 0 12px -7px rgba(8, 61, 53, .4);
+    /* No position transition — the tab must not appear to drift. */
+    transition: background .15s var(--ease), color .15s var(--ease);
+  }
+
+  /* Collapsed: the panel is gone, so the same tab waits at the screen edge. */
+  .app-shell.sidebar-collapsed .sidebar-toggle {
+    inset-inline-start: 0;
+  }
+
+  .sidebar-toggle:hover {
+    transform: translateY(-50%);    /* keep it exactly in place on hover */
+    background: linear-gradient(160deg, var(--green-mid), var(--green-header));
+    color: #fff;
+  }
+
+  .sidebar-toggle span { display: none; }
+  .sidebar-toggle svg { width: 16px; height: 16px; transition: transform .25s var(--ease); }
+  .app-shell.sidebar-collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOP BAR — consistent single-row header across the tablet range
+   (551–1024px). Overrides the earlier column-stacking + oversized logo.
+   ═══════════════════════════════════════════════════════════════════ */
+@media (min-width: 551px) and (max-width: 1024px) {
+  .site-header {
+    min-height: 4rem;
+    padding: 0 16px;
+  }
+
+  .header-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    min-height: 4rem;
+    padding: 0;
+    gap: 12px;
+  }
+
+  /* Logo scales to the bar height instead of a fixed 300×80 that overflowed. */
+  .header-logo {
+    width: auto;
+    max-width: 190px;
+    height: 46px;
+    margin: 0;
+  }
+
+  .header-logo img {
+    width: auto;
+    height: 100%;
+  }
+
+  .header-badge {
+    align-self: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+}
+
+/* On mobile (≤860) the hamburger lives at the header's inline-start; keep the
+   brand clear of it so the logo isn't covered. */
+@media (min-width: 551px) and (max-width: 860px) {
+  .header-inner {
+    padding-inline-start: 58px;
+  }
+}

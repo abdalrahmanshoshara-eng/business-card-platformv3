@@ -155,7 +155,7 @@ function ProfileInner() {
         <div className="card profile-card-main" style={{ gridColumn: '1 / -1' }}>
           <div className="section-head">
             <h2>إعدادات رسالة الترحيب</h2>
-            <Link href="/welcome-test" className="download">اختبار الإرسال</Link>
+            {isAdmin && <Link href="/welcome-test" className="download">اختبار الإرسال</Link>}
           </div>
           <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
             أدخل بريد المُرسِل، وعنوان الرسالة، ونصّها. تُرسَل الرسالة عبر بريد المنصة ويظهر بريدك كمُرسِل وكعنوان للرد.

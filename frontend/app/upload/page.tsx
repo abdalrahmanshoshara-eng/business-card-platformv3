@@ -31,6 +31,7 @@ type ExtractResponse = {
   idempotent_replay?: boolean;
   website_visited?: boolean;
   enrichment?: { reused: boolean; status: string };
+  welcome?: { status: string; detail: string };
 };
 type ProcessingResponse = {
   error_type: 'extraction_in_progress';
@@ -72,6 +73,8 @@ function UploadPageInner() {
   const [duplicate, setDuplicate] = useState<DuplicateResponse | null>(null);
   // Per-extraction choice: visit the company website to determine its activity.
   const [visitWebsite, setVisitWebsite] = useState(false);
+  // Per-extraction choice: auto-send the welcome email to the new card's email.
+  const [autoWelcome, setAutoWelcome] = useState(false);
 
   // Enrichment (opt-in, never automatic).
   const [enrichLoading, setEnrichLoading] = useState(false);
@@ -132,6 +135,7 @@ function UploadPageInner() {
     if (back) fd.append('back', back);
     fd.append('idempotency_key', idempotencyKey);
     fd.append('visit_website', visitWebsite ? '1' : '0');
+    fd.append('send_welcome', autoWelcome ? '1' : '0');
 
     inFlightRef.current = true;
     setLoading(true);
@@ -178,6 +182,10 @@ function UploadPageInner() {
       markStep('save', ['upload', 'extract', 'duplicate', 'save']);
       setStatus({ type: 'success', text: (ok.message || `تم حفظ الكرت كسجل رقم ${ok.card.sequence_number}`) + replayNote });
       resetIdempotencyKey();
+      // Surface the auto-sent welcome result (if the checkbox was on).
+      if (ok.welcome) {
+        setWelcomeInfo({ type: ok.welcome.status === 'sent' ? 'success' : 'error', text: ok.welcome.detail });
+      }
       // If the website was visited during extraction, surface the cached result.
       if (ok.website_visited && ok.card.website) {
         try {
@@ -327,6 +335,19 @@ function UploadPageInner() {
             <span>
               زيارة موقع الشركة أثناء الاستخراج لتحديد نشاطها (اختياري).
               إذا لم تُطلب الزيارة ولم يُحدَّد نشاط الشركة من الكرت، يُوسم الكرت بأنه يحتاج مراجعة.
+            </span>
+          </label>
+
+          <label className="visit-website-option">
+            <input
+              type="checkbox"
+              checked={autoWelcome}
+              disabled={loading}
+              onChange={event => setAutoWelcome(event.target.checked)}
+            />
+            <span>
+              إرسال رسالة ترحيب تلقائيًا إلى بريد الكرت الجديد (إن وُجد بريد صالح)،
+              باستخدام رسالة الترحيب المضبوطة في ملفك الشخصي.
             </span>
           </label>
 

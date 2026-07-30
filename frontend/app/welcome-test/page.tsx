@@ -57,10 +57,6 @@ function WelcomeTestInner() {
             </button>
           </div>
         </form>
-        <p className="status-box" style={{ marginTop: 12 }}>
-          نصيحة: أرسل إلى بريدك الشخصي أولًا للتأكد من الوصول. إن فشل الإرسال تحقّق من إعدادات
-          <span dir="ltr"> WELCOME_FROM_EMAIL / EMAIL_* </span> في الخادم.
-        </p>
       </section>
     </main>
   );
@@ -68,7 +64,7 @@ function WelcomeTestInner() {
 
 export default function WelcomeTestPage() {
   return (
-    <RequireAuth>
+    <RequireAuth admin>
       <WelcomeTestInner />
     </RequireAuth>
   );
