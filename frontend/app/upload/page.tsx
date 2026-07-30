@@ -3,13 +3,17 @@ import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import PageHero from '@/components/PageHero';
+import WelcomePrompt from '@/components/WelcomePrompt';
+import { useAuth } from '@/features/auth/AuthProvider';
 import {
   BusinessCard,
   EnrichmentResponse,
   combineBilingual,
   fetchJson,
   newIdempotencyKey,
+  sendCardWelcome,
 } from '@/lib/api';
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error';
@@ -31,7 +35,6 @@ type ExtractResponse = {
   idempotent_replay?: boolean;
   website_visited?: boolean;
   enrichment?: { reused: boolean; status: string };
-  welcome?: { status: string; detail: string };
 };
 type ProcessingResponse = {
   error_type: 'extraction_in_progress';
@@ -56,6 +59,9 @@ const REVIEW_FIELD_LABELS: Record<string, string> = {
 };
 
 function UploadPageInner() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const welcomeConfigured = !!user?.welcome_email?.sender_email;
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const frontCameraRef = useRef<HTMLInputElement>(null);
@@ -71,16 +77,13 @@ function UploadPageInner() {
   const [doneSteps, setDoneSteps] = useState<StepKey[]>([]);
   const [savedCard, setSavedCard] = useState<BusinessCard | null>(null);
   const [duplicate, setDuplicate] = useState<DuplicateResponse | null>(null);
-  // Per-extraction choice: visit the company website to determine its activity.
-  const [visitWebsite, setVisitWebsite] = useState(false);
-  // Per-extraction choice: auto-send the welcome email to the new card's email.
-  const [autoWelcome, setAutoWelcome] = useState(false);
 
-  // Enrichment (opt-in, never automatic).
+  // Enrichment (cached per domain; shown after extraction).
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichment, setEnrichment] = useState<EnrichmentResponse | null>(null);
 
-  // Welcome email (one-click, sent from the user's own mailbox).
+  // Welcome email: a prompt appears after a new card is saved.
+  const [welcomePromptOpen, setWelcomePromptOpen] = useState(false);
   const [welcomeSending, setWelcomeSending] = useState(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -134,8 +137,6 @@ function UploadPageInner() {
     fd.append('front', front);
     if (back) fd.append('back', back);
     fd.append('idempotency_key', idempotencyKey);
-    fd.append('visit_website', visitWebsite ? '1' : '0');
-    fd.append('send_welcome', autoWelcome ? '1' : '0');
 
     inFlightRef.current = true;
     setLoading(true);
@@ -143,6 +144,7 @@ function UploadPageInner() {
     setDuplicate(null);
     setEnrichment(null);
     setWelcomeInfo(null);
+    setWelcomePromptOpen(false);
     markStep('upload', []);
     setStatus({ type: 'loading', text: 'جاري رفع الصور إلى الخادم...' });
 
@@ -182,9 +184,9 @@ function UploadPageInner() {
       markStep('save', ['upload', 'extract', 'duplicate', 'save']);
       setStatus({ type: 'success', text: (ok.message || `تم حفظ الكرت كسجل رقم ${ok.card.sequence_number}`) + replayNote });
       resetIdempotencyKey();
-      // Surface the auto-sent welcome result (if the checkbox was on).
-      if (ok.welcome) {
-        setWelcomeInfo({ type: ok.welcome.status === 'sent' ? 'success' : 'error', text: ok.welcome.detail });
+      // Prompt to send the welcome email once we have the card's email.
+      if ((ok.card.emails || []).length > 0) {
+        setWelcomePromptOpen(true);
       }
       // If the website was visited during extraction, surface the cached result.
       if (ok.website_visited && ok.card.website) {
@@ -203,21 +205,20 @@ function UploadPageInner() {
     }
   }
 
-  async function sendWelcome(resend: boolean) {
+  async function doSendWelcome() {
     if (!savedCard || welcomeSending) return;
     setWelcomeSending(true);
     setWelcomeInfo(null);
     try {
-      const data = await fetchJson<{ detail?: string; already_sent?: boolean; card?: BusinessCard }>(
-        `/cards/${savedCard.id}/send-welcome/`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resend }) },
-      );
+      const resend = savedCard.welcome_status === 'sent';
+      const data = await sendCardWelcome(savedCard.id, resend);
       if (data.card) setSavedCard(data.card);
       setWelcomeInfo({ type: 'success', text: data.detail || 'تم إرسال رسالة الترحيب.' });
     } catch (error: any) {
       setWelcomeInfo({ type: 'error', text: error.message || 'تعذّر إرسال رسالة الترحيب.' });
     } finally {
       setWelcomeSending(false);
+      setWelcomePromptOpen(false);
     }
   }
 
@@ -325,32 +326,6 @@ function UploadPageInner() {
             </div>
           </div>
 
-          <label className="visit-website-option">
-            <input
-              type="checkbox"
-              checked={visitWebsite}
-              disabled={loading}
-              onChange={event => { setVisitWebsite(event.target.checked); resetIdempotencyKey(); }}
-            />
-            <span>
-              زيارة موقع الشركة أثناء الاستخراج لتحديد نشاطها (اختياري).
-              إذا لم تُطلب الزيارة ولم يُحدَّد نشاط الشركة من الكرت، يُوسم الكرت بأنه يحتاج مراجعة.
-            </span>
-          </label>
-
-          <label className="visit-website-option">
-            <input
-              type="checkbox"
-              checked={autoWelcome}
-              disabled={loading}
-              onChange={event => setAutoWelcome(event.target.checked)}
-            />
-            <span>
-              إرسال رسالة ترحيب تلقائيًا إلى بريد الكرت الجديد (إن وُجد بريد صالح)،
-              باستخدام رسالة الترحيب المضبوطة في ملفك الشخصي.
-            </span>
-          </label>
-
           <div className="button-row">
             <button type="submit" className="btn-gold" disabled={loading || !front}>
               {loading ? 'جاري المعالجة...' : 'استخراج وحفظ'}
@@ -368,6 +343,7 @@ function UploadPageInner() {
                 setDuplicate(null);
                 setEnrichment(null);
                 setWelcomeInfo(null);
+                setWelcomePromptOpen(false);
                 resetIdempotencyKey();
                 setStatus({ type: 'idle', text: 'تمت إعادة ضبط النموذج. اختر صورًا جديدة.' });
                 markStep('upload', []);
@@ -432,26 +408,30 @@ function UploadPageInner() {
             {savedCard.welcome_status === 'failed' && <span className="badge warning">فشل الإرسال</span>}
           </div>
           <p>
-            إرسال رسالة الترحيب من بريدك إلى بريد الكرت:{' '}
-            <strong dir="ltr">{savedCard.emails[0]}</strong>
+            المستلم: <strong dir="ltr">{savedCard.emails[0]}</strong>
           </p>
           <div className="button-row">
-            {savedCard.welcome_status === 'sent' ? (
-              <button type="button" className="btn btn-gold secondary" disabled={welcomeSending} onClick={() => sendWelcome(true)}>
-                {welcomeSending ? 'جارٍ الإرسال...' : 'إعادة الإرسال'}
-              </button>
-            ) : (
-              <button type="button" className="btn-gold" disabled={welcomeSending} onClick={() => sendWelcome(false)}>
-                {welcomeSending ? 'جارٍ الإرسال...' : 'إرسال رسالة ترحيب'}
-              </button>
-            )}
+            <button
+              type="button"
+              className={savedCard.welcome_status === 'sent' ? 'btn btn-gold secondary' : 'btn-green'}
+              disabled={welcomeSending}
+              onClick={() => setWelcomePromptOpen(true)}
+            >
+              {savedCard.welcome_status === 'sent' ? 'إعادة إرسال الترحيب' : 'إرسال رسالة ترحيب'}
+            </button>
           </div>
           {welcomeInfo && <p className={`status-box ${welcomeInfo.type}`}>{welcomeInfo.text}</p>}
-          {savedCard.welcome_status !== 'sent' && !welcomeInfo && (
-            <p className="status-box">تأكد من ضبط إعدادات رسالة الترحيب في ملفك الشخصي قبل الإرسال.</p>
-          )}
         </section>
       )}
+
+      <WelcomePrompt
+        open={welcomePromptOpen}
+        mode={welcomeConfigured ? 'confirm' : 'setup'}
+        busy={welcomeSending}
+        onConfirm={doSendWelcome}
+        onSetupEmail={() => router.push('/profile')}
+        onClose={() => setWelcomePromptOpen(false)}
+      />
 
       {savedCard && savedCard.website && (
         <section className="card">

@@ -52,6 +52,22 @@ export type CompanyEnrichment = {
   last_error: string;
 };
 
+export type WelcomeSendResponse = {
+  detail?: string;
+  welcome_status?: string;
+  already_sent?: boolean;
+  card?: BusinessCard;
+  error_type?: string;
+};
+
+export async function sendCardWelcome(cardId: number, resend = false): Promise<WelcomeSendResponse> {
+  return fetchJson<WelcomeSendResponse>(`/cards/${cardId}/send-welcome/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resend }),
+  });
+}
+
 export type EnrichmentResponse = {
   card_id: number;
   status: string;

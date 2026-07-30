@@ -397,9 +397,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             back.seek(0)
             back_bytes = back.read()
             back.seek(0)
-        # Per-extraction choices.
-        visit_website = _truthy(request.data.get('visit_website'))
-        send_welcome_flag = _truthy(request.data.get('send_welcome'))
+        # The company website is always visited to determine the activity.
+        visit_website = True
         fingerprint = self._image_fingerprint(front_bytes, back_bytes, visit_website)
         idem_key = self._idempotency_key(request)
 
@@ -576,9 +575,6 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        # Optionally send the welcome email to the new card now (one action).
-        welcome_result = self._maybe_send_welcome(request, card) if send_welcome_flag else None
-
         payload = {
             'duplicate': False,
             'saved': True,
@@ -588,8 +584,6 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         }
         if enrichment_payload is not None:
             payload['enrichment'] = enrichment_payload
-        if welcome_result is not None:
-            payload['welcome'] = welcome_result
         self._complete_extraction_request(extraction_request, payload, card=card)
         # Cost logging must never break the (already saved) card.
         log_gemini_usage(
@@ -640,31 +634,6 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         return Response(self._enrichment_payload(request, card, row, reused))
 
     # ── Welcome email ───────────────────────────────────────────────────────
-    def _maybe_send_welcome(self, request, card) -> dict:
-        """Send the welcome email to a freshly created card (used by the extract
-        auto-send checkbox). Never raises; returns a small status dict. Failure
-        here must not undo the already-saved card."""
-        recipient = next((str(e).strip() for e in (card.emails or []) if str(e).strip()), '')
-        if not recipient:
-            return {'status': 'skipped', 'detail': 'لا يوجد بريد إلكتروني على الكرت.'}
-        profile = getattr(request.user, 'profile', None)
-        if profile is None or not profile.has_welcome_config():
-            return {'status': 'skipped', 'detail': 'لم تُضبط رسالة الترحيب في الملف الشخصي.'}
-        try:
-            send_welcome_email(profile, to_email=recipient, subject=profile.welcome_subject, body=profile.welcome_message)
-        except WelcomeEmailError as exc:
-            card.welcome_status = BusinessCard.WELCOME_FAILED
-            card.welcome_sent_to = recipient
-            card.welcome_error = str(exc)[:2000]
-            card.save(update_fields=['welcome_status', 'welcome_sent_to', 'welcome_error', 'updated_at'])
-            return {'status': 'failed', 'detail': str(exc)}
-        card.welcome_status = BusinessCard.WELCOME_SENT
-        card.welcome_sent_at = timezone.now()
-        card.welcome_sent_to = recipient
-        card.welcome_error = ''
-        card.save(update_fields=['welcome_status', 'welcome_sent_at', 'welcome_sent_to', 'welcome_error', 'updated_at'])
-        return {'status': 'sent', 'detail': f'تم إرسال رسالة الترحيب إلى {recipient}.'}
-
     @action(detail=True, methods=['post'], url_path='send-welcome')
     def send_welcome(self, request, pk=None):
         card = self.get_object()  # ownership-scoped (404 for others' cards)

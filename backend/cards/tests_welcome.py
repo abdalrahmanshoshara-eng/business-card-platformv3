@@ -95,6 +95,11 @@ class SendWelcomeApiTests(TestCase):
         self.assertEqual(mime, 'text/html')
         self.assertIn('sender@example.com', html)
         self.assertIn('مرحبًا بك', html)
+        # Ministry identity: header references the inline logo (CID) and the
+        # logo image is embedded so external recipients can see it.
+        self.assertIn('cid:welcomelogo', html)
+        self.assertTrue(msg.attachments)
+        self.assertEqual(msg.mixed_subtype, 'related')
         self.card.refresh_from_db()
         self.assertEqual(self.card.welcome_status, 'sent')
         self.assertEqual(self.card.welcome_sent_to, 'recipient@corp.com')

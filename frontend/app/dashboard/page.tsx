@@ -3,11 +3,15 @@ import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PageHero from "@/components/PageHero";
+import WelcomePrompt from "@/components/WelcomePrompt";
+import { useAuth } from "@/features/auth/AuthProvider";
 import {
   BusinessCard,
   combineBilingual,
   fetchJson,
+  sendCardWelcome,
   toMediaUrl,
 } from "@/lib/api";
 import { INVESTMENT_TYPES } from "@/lib/constants";
@@ -226,6 +230,11 @@ function displayInvestment(card: BusinessCard) {
 }
 
 function DashboardPageInner() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const welcomeConfigured = !!user?.welcome_email?.sender_email;
+  const [welcomeBusyId, setWelcomeBusyId] = useState<number | null>(null);
+  const [welcomeSetupOpen, setWelcomeSetupOpen] = useState(false);
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
   const [activity, setActivity] = useState("");
@@ -360,6 +369,30 @@ function DashboardPageInner() {
     setEditCard(card);
     setEditForm(toEditForm(card));
     setError("");
+  }
+
+  async function handleWelcome(card: BusinessCard) {
+    // Not configured → show the setup popup (offer to set the sender email).
+    if (!welcomeConfigured) {
+      setWelcomeSetupOpen(true);
+      return;
+    }
+    if (welcomeBusyId) return;
+    setWelcomeBusyId(card.id);
+    setError("");
+    try {
+      const resend = card.welcome_status === "sent";
+      const res = await sendCardWelcome(card.id, resend);
+      if (res.card) {
+        const updated = res.card;
+        setCards((cur) => cur.map((c) => (c.id === updated.id ? updated : c)));
+      }
+    } catch (e: any) {
+      setError(e.message || "تعذّر إرسال رسالة الترحيب");
+      setCards((cur) => cur.map((c) => (c.id === card.id ? { ...c, welcome_status: "failed" } : c)));
+    } finally {
+      setWelcomeBusyId(null);
+    }
   }
 
   async function saveEdit() {
@@ -727,6 +760,7 @@ function DashboardPageInner() {
               <th>نوع الاستثمار</th>
               <th>تاريخ الإضافة</th>
               <th>الحالة</th>
+              <th>الترحيب</th>
               <th>إجراءات</th>
             </tr>
           </thead>
@@ -765,6 +799,39 @@ function DashboardPageInner() {
                     <span className="badge success">جاهز</span>
                   )}
                 </td>
+                <td data-label="الترحيب">
+                  {(card.emails || []).length ? (
+                    <button
+                      type="button"
+                      className={
+                        card.welcome_status === "sent"
+                          ? "btn-small welcome-sent"
+                          : card.welcome_status === "failed"
+                            ? "btn-small danger"
+                            : "btn-small welcome-send"
+                      }
+                      disabled={welcomeBusyId === card.id}
+                      onClick={() => handleWelcome(card)}
+                      title={
+                        card.welcome_status === "sent"
+                          ? `تم إرسال الترحيب${card.welcome_sent_to ? " إلى " + card.welcome_sent_to : ""} — اضغط لإعادة الإرسال`
+                          : card.welcome_status === "failed"
+                            ? "فشل إرسال الترحيب — اضغط للمحاولة مجددًا"
+                            : "إرسال رسالة ترحيب إلى بريد الكرت"
+                      }
+                    >
+                      {welcomeBusyId === card.id
+                        ? "جارٍ..."
+                        : card.welcome_status === "sent"
+                          ? "تم الترحيب ✓"
+                          : card.welcome_status === "failed"
+                            ? "فشل الترحيب"
+                            : "إرسال ترحيب"}
+                    </button>
+                  ) : (
+                    <span className="muted-dash">—</span>
+                  )}
+                </td>
                 <td data-label="إجراءات">
                   <div className="row-actions">
                     <button
@@ -799,7 +866,7 @@ function DashboardPageInner() {
             ))}
             {!cards.length && (
               <tr>
-                <td colSpan={11} className="empty-cell">
+                <td colSpan={14} className="empty-cell">
                   {loading
                     ? "جاري تحميل البيانات..."
                     : "لا توجد بيانات مطابقة للبحث."}
@@ -831,6 +898,13 @@ function DashboardPageInner() {
           التالي
         </button>
       </nav>
+
+      <WelcomePrompt
+        open={welcomeSetupOpen}
+        mode="setup"
+        onSetupEmail={() => router.push('/profile')}
+        onClose={() => setWelcomeSetupOpen(false)}
+      />
 
       {imageCard && (
         <div

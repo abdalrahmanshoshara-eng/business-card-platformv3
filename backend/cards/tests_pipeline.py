@@ -94,6 +94,33 @@ def mock_gemini(script, target='cards.services.extractor.genai.Client'):
         yield models
 
 
+@contextmanager
+def mock_extract_and_enrich(extract_response, industry='صناعة', description=''):
+    """Extraction now always visits the website, so extraction AND the inline
+    enrichment share the same google.genai.Client. Route by response_schema:
+    BusinessCardData → the extraction response; CompanyEnrichmentData → an
+    enrichment response. Also stubs the website fetch. Yields call counters."""
+    from .services.enrichment import CompanyEnrichmentData
+    counters = {'extract': 0, 'enrich': 0}
+    enrich_resp = FakeResponse(
+        parsed=CompanyEnrichmentData(company_name='Co', industry=industry, company_description=description),
+        text='{}', usage=FakeUsage(),
+    )
+
+    class Router:
+        def generate_content(self, **kwargs):
+            if getattr(kwargs.get('config'), 'response_schema', None) is CompanyEnrichmentData:
+                counters['enrich'] += 1
+                return enrich_resp
+            counters['extract'] += 1
+            return extract_response
+
+    fake = type('FakeClient', (), {'models': Router()})()
+    with patch('cards.services.extractor.genai.Client', return_value=fake), \
+         patch('cards.services.enrichment.fetch_website_text', return_value=('company website text', 'ok')):
+        yield counters
+
+
 def card_response(usage=None, **fields):
     fields.setdefault('confidence', 0.9)
     fields.setdefault('needs_review', False)
@@ -306,49 +333,6 @@ class RetryPolicyTests(PipelineTestCase):
         self.assertEqual(BusinessCard.objects.count(), 0)
 
 
-@override_settings(**TEST_SETTINGS)
-class AutoWelcomeOnExtractTests(PipelineTestCase):
-    def _configure(self, user):
-        from accounts.models import Profile
-        Profile.objects.update_or_create(
-            user=user,
-            defaults={'sender_email': 'me@x.com', 'welcome_subject': 'Hi', 'welcome_message': 'Welcome!'},
-        )
-
-    def test_auto_welcome_sends_when_checkbox_on_and_card_has_email(self):
-        from django.core import mail
-        client, user = auth_client()
-        self._configure(user)
-        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
-        with mock_gemini(script):
-            res = client.post('/api/cards/extract', {'front': upload(), 'send_welcome': '1'}, format='multipart')
-        self.assertEqual(res.status_code, 201, res.data)
-        self.assertEqual(res.data['welcome']['status'], 'sent')
-        self.assertEqual(len(mail.outbox), 1)
-        self.assertEqual(mail.outbox[0].to, ['new@card.com'])
-        self.assertEqual(BusinessCard.objects.get().welcome_status, 'sent')
-
-    def test_no_welcome_when_flag_off(self):
-        from django.core import mail
-        client, user = auth_client()
-        self._configure(user)
-        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
-        with mock_gemini(script):
-            res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
-        self.assertNotIn('welcome', res.data)
-        self.assertEqual(len(mail.outbox), 0)
-        self.assertEqual(BusinessCard.objects.get().welcome_status, 'not_sent')
-
-    def test_auto_welcome_skipped_when_not_configured(self):
-        from django.core import mail
-        client, _ = auth_client()  # no profile config
-        script = [card_response(person_name='Al', company_name='Co', emails=['new@card.com'], mobile_numbers=['+963 944 111 222'])]
-        with mock_gemini(script):
-            res = client.post('/api/cards/extract', {'front': upload(), 'send_welcome': '1'}, format='multipart')
-        self.assertEqual(res.data['welcome']['status'], 'skipped')
-        self.assertEqual(len(mail.outbox), 0)
-
-
 @override_settings(GEMINI_API_KEYS=['KEY1', 'KEY2', 'KEY3'])
 class GeminiKeySelectionTests(PipelineTestCase):
     def test_strict_priority_prefers_first_key(self):
@@ -401,114 +385,86 @@ class DomainNormalizationTests(PipelineTestCase):
 
 @override_settings(**TEST_SETTINGS)
 class EnrichmentTests(PipelineTestCase):
-    def _make_card_with_site(self, client, website='https://acme-corp.example/'):
-        with mock_gemini([card_response(person_name='Kim', company_name='Acme', website=website,
-                                        mobile_numbers=['+963 944 111 000'])]):
-            client.post('/api/cards/extract', {'front': upload()}, format='multipart')
-        return BusinessCard.objects.get()
+    """Extraction ALWAYS visits the company website to determine the activity."""
 
-    def test_extraction_does_not_trigger_enrichment(self):
+    def test_extraction_visits_site_fills_activity_and_caches(self):
         client, _ = auth_client()
-        card = self._make_card_with_site(client)
-        self.assertTrue(card.website)
-        self.assertEqual(CompanyDomainEnrichment.objects.count(), 0)
-        self.assertEqual(GeminiUsageLog.objects.filter(operation_type=GeminiUsageLog.OP_WEBSITE_ENRICHMENT).count(), 0)
+        extract_resp = card_response(person_name='Ned', company_name='Visit Co', website='https://visit-co.com/',
+                                     mobile_numbers=['+963 944 222 444'], company_activity='', confidence=0.9)
+        with mock_extract_and_enrich(extract_resp, industry='الطاقة المتجددة') as counters:
+            res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
+        self.assertEqual(res.status_code, 201, res.data)
+        card = BusinessCard.objects.get()
+        self.assertEqual(card.company_activity, 'الطاقة المتجددة')      # filled from the site
+        self.assertNotIn('company_activity', card.review_fields)
+        self.assertEqual(counters['enrich'], 1)                         # visited once
+        self.assertTrue(CompanyDomainEnrichment.objects.filter(canonical_domain='visit-co.com').exists())
+        self.assertTrue(GeminiUsageLog.objects.filter(operation_type=GeminiUsageLog.OP_WEBSITE_ENRICHMENT).exists())
 
-    def test_enrichment_runs_only_on_explicit_request(self):
+    def test_no_website_and_unknown_activity_flags_review(self):
         client, _ = auth_client()
-        card = self._make_card_with_site(client)
-        enrich_resp = card_response(company_name='Acme', usage=FakeUsage(pin=2000, pout=100))
-        # Enrichment parses into CompanyEnrichmentData, so give it that shape via text.
-        from .services.enrichment import CompanyEnrichmentData
-        enrich_resp.parsed = CompanyEnrichmentData(company_name='Acme', industry='Manufacturing',
-                                                   company_description='Makes things.', services=['A', 'B'])
-        with patch('cards.services.enrichment.fetch_website_text', return_value=('Acme makes things. Services A B.', 'ok')):
-            with mock_gemini([enrich_resp], target='cards.services.enrichment.genai.Client') as models:
-                res = client.post(f'/api/cards/{card.id}/enrich', {}, format='json')
-        self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual(res.data['status'], 'completed')
-        self.assertFalse(res.data['reused'])
-        self.assertEqual(models.calls, 1)
-        self.assertEqual(CompanyDomainEnrichment.objects.count(), 1)
-
-    def test_second_card_same_domain_reuses_cache(self):
-        client, user = auth_client()
-        card = self._make_card_with_site(client)
-        from .services.enrichment import CompanyEnrichmentData
-        enrich_resp = card_response(usage=FakeUsage())
-        enrich_resp.parsed = CompanyEnrichmentData(company_name='Acme', industry='Manufacturing')
-        with patch('cards.services.enrichment.fetch_website_text', return_value=('Acme makes things.', 'ok')):
-            with mock_gemini([enrich_resp], target='cards.services.enrichment.genai.Client') as models:
-                client.post(f'/api/cards/{card.id}/enrich', {}, format='json')
-                # Second enrichment of same domain must reuse cache, no new call.
-                res2 = client.post(f'/api/cards/{card.id}/enrich', {}, format='json')
-                self.assertEqual(models.calls, 1)
-        self.assertTrue(res2.data['reused'])
-
-    def test_skipping_website_with_unknown_activity_flags_review(self):
-        client, _ = auth_client()
-        script = [card_response(person_name='Lee', company_name='NoActivity Co', website='https://noact.example/',
+        # No website → nothing to visit → activity stays unknown → needs review.
+        script = [card_response(person_name='Lee', company_name='NoSite Co',
                                 mobile_numbers=['+963 944 222 111'], company_activity='')]
-        with mock_gemini(script):  # visit_website defaults to false
+        with mock_gemini(script):
             res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
         self.assertEqual(res.status_code, 201, res.data)
         card = BusinessCard.objects.get()
         self.assertTrue(card.needs_review)
         self.assertIn('company_activity', card.review_fields)
-        self.assertEqual(CompanyDomainEnrichment.objects.count(), 0)  # no visit → no enrichment
+        self.assertEqual(CompanyDomainEnrichment.objects.count(), 0)
 
-    def test_known_activity_without_visit_is_not_flagged_by_rule(self):
+    def test_known_activity_not_flagged(self):
         client, _ = auth_client()
         script = [card_response(person_name='Mia', company_name='HasActivity Co',
                                 mobile_numbers=['+963 944 222 333'], company_activity='مقاولات وإنشاءات', confidence=0.9)]
         with mock_gemini(script):
-            res = client.post('/api/cards/extract', {'front': upload(), 'visit_website': '0'}, format='multipart')
+            res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
         card = BusinessCard.objects.get()
         self.assertNotIn('company_activity', card.review_fields)
         self.assertFalse(card.needs_review)
 
-    def test_visiting_website_fills_activity_and_avoids_flag(self):
-        # Extraction and enrichment both happen in one request and share the same
-        # google.genai.Client, so route by response_schema instead of nesting patches.
-        client, _ = auth_client()
-        from .services.enrichment import CompanyEnrichmentData
-        extract_resp = card_response(person_name='Ned', company_name='Visit Co', website='https://visit.example/',
-                                     mobile_numbers=['+963 944 222 444'], company_activity='', confidence=0.9)
-        enrich_resp = FakeResponse(parsed=CompanyEnrichmentData(company_name='Visit Co', industry='الطاقة المتجددة'),
-                                   text='{}', usage=FakeUsage())
+    def test_same_registered_domain_reuses_cache(self):
+        from .services.enrichment import CompanyEnrichmentData, run_enrichment
+        _, user = auth_client()
+        calls = {'n': 0}
 
-        counters = {'enrich': 0}
-
-        class Router:
+        class Models:
             def generate_content(self, **kwargs):
-                if getattr(kwargs.get('config'), 'response_schema', None) is CompanyEnrichmentData:
-                    counters['enrich'] += 1
-                    return enrich_resp
-                return extract_resp
+                calls['n'] += 1
+                return FakeResponse(parsed=CompanyEnrichmentData(company_name='Acme', industry='صناعة'),
+                                    text='{}', usage=FakeUsage())
 
-        fake_client = type('FakeClient', (), {'models': Router()})()
-        with patch('cards.services.extractor.genai.Client', return_value=fake_client):
-            with patch('cards.services.enrichment.fetch_website_text', return_value=('solar and wind energy', 'ok')):
-                res = client.post('/api/cards/extract', {'front': upload(), 'visit_website': '1'}, format='multipart')
-        self.assertEqual(res.status_code, 201, res.data)
-        card = BusinessCard.objects.get()
-        self.assertEqual(card.company_activity, 'الطاقة المتجددة')
-        self.assertNotIn('company_activity', card.review_fields)
-        self.assertEqual(counters['enrich'], 1)
-        self.assertEqual(res.data.get('website_visited'), True)
+        fake = type('FakeClient', (), {'models': Models()})()
+        with patch('cards.services.enrichment.genai.Client', return_value=fake), \
+             patch('cards.services.enrichment.fetch_website_text', return_value=('t', 'ok')):
+            row1, reused1 = run_enrichment('https://acme.com/', owner=user)
+            # Different subdomain/path but same registered domain → cache hit, no new call.
+            row2, reused2 = run_enrichment('https://careers.acme.com/jobs', owner=user)
+        self.assertEqual(calls['n'], 1)
+        self.assertFalse(reused1)
+        self.assertTrue(reused2)
+        self.assertEqual(row2.canonical_domain, 'acme.com')
 
     def test_processing_lock_prevents_parallel_enrichment(self):
         from django.utils import timezone
         from .services.enrichment import run_enrichment
-        client, user = auth_client()
-        card = self._make_card_with_site(client)
-        # Pre-create a fresh in-flight lock for the domain.
+        _, user = auth_client()
         CompanyDomainEnrichment.objects.create(
-            canonical_domain=domains.canonical_domain(card.website),
+            canonical_domain='locked-co.com',
             status=CompanyDomainEnrichment.STATUS_PROCESSING,
             locked_at=timezone.now(),
         )
-        with mock_gemini([card_response()], target='cards.services.enrichment.genai.Client') as models:
-            row, reused = run_enrichment(card.website, owner=user, card=card)
-        self.assertEqual(models.calls, 0)  # locked → no Gemini call
+        calls = {'n': 0}
+
+        class Models:
+            def generate_content(self, **kwargs):
+                calls['n'] += 1
+                raise AssertionError('Gemini must not be called while another enrichment holds the lock')
+
+        fake = type('FakeClient', (), {'models': Models()})()
+        with patch('cards.services.enrichment.genai.Client', return_value=fake), \
+             patch('cards.services.enrichment.fetch_website_text', return_value=('t', 'ok')):
+            row, reused = run_enrichment('https://locked-co.com/', owner=user)
+        self.assertEqual(calls['n'], 0)   # locked → no Gemini call
         self.assertTrue(reused)

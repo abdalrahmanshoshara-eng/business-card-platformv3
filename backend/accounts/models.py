@@ -29,8 +29,9 @@ class Profile(models.Model):
     welcome_message = models.TextField(blank=True)
 
     def has_welcome_config(self) -> bool:
-        """True when the profile can send a welcome email (a message is set)."""
-        return bool(self.welcome_message.strip())
+        """True when the user can send a welcome email — i.e. they set a sender
+        email. The message itself falls back to a default when left blank."""
+        return bool(self.sender_email)
 
     def __str__(self):
         return f'Profile<{self.user_id}>'

@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import Profile
+from .services_email import DEFAULT_WELCOME_MESSAGE, DEFAULT_WELCOME_SUBJECT
 
 User = get_user_model()
 
@@ -18,11 +19,17 @@ WELCOME_CONFIG_FIELDS = ('sender_email', 'welcome_subject', 'welcome_message')
 def get_welcome_config(user) -> dict:
     profile = getattr(user, 'profile', None)
     if not profile:
-        return {'sender_email': '', 'welcome_subject': '', 'welcome_message': '', 'configured': False}
+        return {
+            'sender_email': '',
+            'welcome_subject': DEFAULT_WELCOME_SUBJECT,
+            'welcome_message': DEFAULT_WELCOME_MESSAGE,
+            'configured': False,
+        }
     return {
         'sender_email': profile.sender_email,
-        'welcome_subject': profile.welcome_subject,
-        'welcome_message': profile.welcome_message,
+        # Surface the effective content, defaulting when the user left it blank.
+        'welcome_subject': profile.welcome_subject or DEFAULT_WELCOME_SUBJECT,
+        'welcome_message': profile.welcome_message or DEFAULT_WELCOME_MESSAGE,
         'configured': profile.has_welcome_config(),
     }
 

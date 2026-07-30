@@ -1833,9 +1833,9 @@ button:disabled,
   transition: transform .15s var(--ease), box-shadow .15s var(--ease);
 }
 
-.sidebar-toggle:hover {
+/* .sidebar-toggle:hover {
   transform: translateY(-1px) scale(1.05);
-}
+} */
 
 .sidebar-toggle span {
   display: none;
@@ -2115,6 +2115,83 @@ button:disabled,
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   WELCOME EMAIL — green primary button, table status chips, prompt modal.
+   ═══════════════════════════════════════════════════════════════════ */
+.btn-green {
+  border: 1px solid var(--green-mid);
+  background: linear-gradient(135deg, var(--green-header), var(--green-mid));
+  color: #f7f3e8;
+  padding: 11px 22px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: filter .15s var(--ease), transform .12s var(--ease), box-shadow .15s var(--ease);
+  box-shadow: 0 6px 16px rgba(8, 61, 53, .22);
+}
+
+.btn-green:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.btn-green:disabled {
+  opacity: .65;
+  cursor: default;
+  transform: none;
+}
+
+/* Table welcome chips */
+.btn-small.welcome-send {
+  border-color: var(--green-mid);
+  background: rgba(15, 90, 78, .10);
+  color: var(--green-header);
+  font-weight: 800;
+}
+
+.btn-small.welcome-send:hover {
+  background: linear-gradient(135deg, var(--green-header), var(--green-mid));
+  color: #f7f3e8;
+}
+
+.btn-small.welcome-sent {
+  border-color: rgba(23, 109, 76, .4);
+  background: #eef9f3;
+  color: var(--success);
+  font-weight: 800;
+}
+
+.muted-dash {
+  color: var(--text-muted);
+}
+
+/* Centred welcome prompt modal */
+.modal-panel.welcome-prompt {
+  text-align: center;
+}
+
+.welcome-prompt-icon {
+  font-size: 40px;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.welcome-prompt h2 {
+  margin: 4px 0 6px;
+}
+
+.welcome-prompt p {
+  color: var(--text-muted);
+  line-height: 1.9;
+  margin: 0 0 6px;
+}
+
+.welcome-prompt-actions {
+  justify-content: center;
+  margin-top: 18px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    DESKTOP COLLAPSIBLE SIDEBAR (v3) — appended last so it wins the cascade.
    A polished toggle that smoothly collapses the side nav on ≥861px, while
    the mobile drawer behaviour (≤860px) defined above is left untouched.
@@ -2144,7 +2221,8 @@ button:disabled,
     display: inline-flex !important;
     position: fixed;
     top: 50%;
-    transform: translateY(-50%);
+    /* Locked with !important on every state so the tab NEVER moves on hover. */
+    transform: translateY(-50%) !important;
     inset-inline-start: 288px;      /* flush with the sidebar's inner edge */
     inset-inline-end: auto;
     width: 22px;
@@ -2163,7 +2241,7 @@ button:disabled,
     cursor: pointer;
     z-index: 46;
     box-shadow: -5px 0 12px -7px rgba(8, 61, 53, .4);
-    /* No position transition — the tab must not appear to drift. */
+    /* Only colour transitions — never transform/position. */
     transition: background .15s var(--ease), color .15s var(--ease);
   }
 
@@ -2172,8 +2250,12 @@ button:disabled,
     inset-inline-start: 0;
   }
 
-  .sidebar-toggle:hover {
-    transform: translateY(-50%);    /* keep it exactly in place on hover */
+  /* Hover/focus/active: colour only — position stays pinned. */
+  .sidebar-toggle:hover,
+  .sidebar-toggle:focus,
+  .sidebar-toggle:active,
+  .sidebar-toggle:focus-visible {
+    transform: translateY(-50%) !important;
     background: linear-gradient(160deg, var(--green-mid), var(--green-header));
     color: #fff;
   }
