@@ -2141,12 +2141,13 @@ button:disabled,
   transform: none;
 }
 
-/* Table welcome chips */
+/* Table welcome control — clickable states (hover only when actionable) */
 .btn-small.welcome-send {
   border-color: var(--green-mid);
   background: rgba(15, 90, 78, .10);
   color: var(--green-header);
   font-weight: 800;
+  cursor: pointer;
 }
 
 .btn-small.welcome-send:hover {
@@ -2154,11 +2155,33 @@ button:disabled,
   color: #f7f3e8;
 }
 
-.btn-small.welcome-sent {
-  border-color: rgba(23, 109, 76, .4);
+/* Failed → red, clickable to retry */
+.btn-small.welcome-failed {
+  border-color: rgba(192, 57, 43, .45);
+  background: #fdecea;
+  color: var(--danger);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.btn-small.welcome-failed:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+/* Sent → static chip: NOT a button, no pointer, no hover change ever */
+.welcome-chip.sent {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(23, 109, 76, .4);
   background: #eef9f3;
   color: var(--success);
   font-weight: 800;
+  font-size: 13px;
+  cursor: default;
+  user-select: none;
 }
 
 .muted-dash {

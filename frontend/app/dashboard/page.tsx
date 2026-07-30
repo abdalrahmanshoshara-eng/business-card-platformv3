@@ -235,6 +235,7 @@ function DashboardPageInner() {
   const welcomeConfigured = !!user?.welcome_email?.sender_email;
   const [welcomeBusyId, setWelcomeBusyId] = useState<number | null>(null);
   const [welcomeSetupOpen, setWelcomeSetupOpen] = useState(false);
+  const [welcomeErrorMsg, setWelcomeErrorMsg] = useState("");
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
   const [activity, setActivity] = useState("");
@@ -372,6 +373,8 @@ function DashboardPageInner() {
   }
 
   async function handleWelcome(card: BusinessCard) {
+    // Already sent → not actionable (the cell renders a static chip, not a button).
+    if (card.welcome_status === "sent") return;
     // Not configured → show the setup popup (offer to set the sender email).
     if (!welcomeConfigured) {
       setWelcomeSetupOpen(true);
@@ -379,16 +382,16 @@ function DashboardPageInner() {
     }
     if (welcomeBusyId) return;
     setWelcomeBusyId(card.id);
-    setError("");
+    setWelcomeErrorMsg("");
     try {
-      const resend = card.welcome_status === "sent";
-      const res = await sendCardWelcome(card.id, resend);
+      const res = await sendCardWelcome(card.id, false);
       if (res.card) {
         const updated = res.card;
         setCards((cur) => cur.map((c) => (c.id === updated.id ? updated : c)));
       }
     } catch (e: any) {
-      setError(e.message || "تعذّر إرسال رسالة الترحيب");
+      // Show the reason centred on screen; mark the row as failed for a retry.
+      setWelcomeErrorMsg(e.message || "تعذّر إرسال رسالة الترحيب.");
       setCards((cur) => cur.map((c) => (c.id === card.id ? { ...c, welcome_status: "failed" } : c)));
     } finally {
       setWelcomeBusyId(null);
@@ -800,36 +803,35 @@ function DashboardPageInner() {
                   )}
                 </td>
                 <td data-label="الترحيب">
-                  {(card.emails || []).length ? (
+                  {!(card.emails || []).length ? (
+                    <span className="muted-dash">—</span>
+                  ) : card.welcome_status === "sent" ? (
+                    // Sent: a static, non-clickable chip with no hover.
+                    <span
+                      className="welcome-chip sent"
+                      title={`تم إرسال الترحيب${card.welcome_sent_to ? " إلى " + card.welcome_sent_to : ""}`}
+                    >
+                      تم الترحيب ✓
+                    </span>
+                  ) : (
+                    // not_sent → send; failed (red) → retry.
                     <button
                       type="button"
-                      className={
-                        card.welcome_status === "sent"
-                          ? "btn-small welcome-sent"
-                          : card.welcome_status === "failed"
-                            ? "btn-small danger"
-                            : "btn-small welcome-send"
-                      }
+                      className={card.welcome_status === "failed" ? "btn-small welcome-failed" : "btn-small welcome-send"}
                       disabled={welcomeBusyId === card.id}
                       onClick={() => handleWelcome(card)}
                       title={
-                        card.welcome_status === "sent"
-                          ? `تم إرسال الترحيب${card.welcome_sent_to ? " إلى " + card.welcome_sent_to : ""} — اضغط لإعادة الإرسال`
-                          : card.welcome_status === "failed"
-                            ? "فشل إرسال الترحيب — اضغط للمحاولة مجددًا"
-                            : "إرسال رسالة ترحيب إلى بريد الكرت"
+                        card.welcome_status === "failed"
+                          ? "فشل إرسال الترحيب — اضغط لإعادة المحاولة"
+                          : "إرسال رسالة ترحيب إلى بريد الكرت"
                       }
                     >
                       {welcomeBusyId === card.id
                         ? "جارٍ..."
-                        : card.welcome_status === "sent"
-                          ? "تم الترحيب ✓"
-                          : card.welcome_status === "failed"
-                            ? "فشل الترحيب"
-                            : "إرسال ترحيب"}
+                        : card.welcome_status === "failed"
+                          ? "فشل الترحيب"
+                          : "إرسال ترحيب"}
                     </button>
-                  ) : (
-                    <span className="muted-dash">—</span>
                   )}
                 </td>
                 <td data-label="إجراءات">
@@ -905,6 +907,19 @@ function DashboardPageInner() {
         onSetupEmail={() => router.push('/profile')}
         onClose={() => setWelcomeSetupOpen(false)}
       />
+
+      {welcomeErrorMsg && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="فشل إرسال الترحيب">
+          <div className="modal-panel welcome-prompt" style={{ maxWidth: 440 }}>
+            <div className="welcome-prompt-icon" aria-hidden="true">⚠️</div>
+            <h2>تعذّر إرسال رسالة الترحيب</h2>
+            <p>{welcomeErrorMsg}</p>
+            <div className="button-row welcome-prompt-actions">
+              <button type="button" className="btn-green" onClick={() => setWelcomeErrorMsg("")}>حسناً</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {imageCard && (
         <div
