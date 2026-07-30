@@ -27,6 +27,7 @@ from .serializers import (
     UserSerializer,
 )
 from .services import build_reset_link, send_reset_email
+from .services_email import WelcomeEmailError, send_welcome_email
 
 User = get_user_model()
 
@@ -117,6 +118,35 @@ class ProfileView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(UserSerializer(request.user).data)
+
+
+class WelcomeTestView(APIView):
+    """Send a one-off test email to an arbitrary address to verify the platform
+    mail configuration. Uses the user's welcome subject/message when set, else a
+    default test body."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'welcome_test'
+
+    def post(self, request):
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        to_email = (request.data.get('to') or request.data.get('email') or '').strip()
+        try:
+            validate_email(to_email)
+        except DjangoValidationError:
+            return Response({'detail': 'يرجى إدخال بريد إلكتروني صالح.', 'error_type': 'invalid_email'}, status=status.HTTP_400_BAD_REQUEST)
+
+        profile = getattr(request.user, 'profile', None)
+        subject = (getattr(profile, 'welcome_subject', '') or '').strip() or 'رسالة اختبار'
+        body = (getattr(profile, 'welcome_message', '') or '').strip() or 'هذه رسالة اختبار من منصة البطاقات للتأكد من إعدادات البريد.'
+        try:
+            send_welcome_email(profile, to_email=to_email, subject=subject, body=body)
+        except WelcomeEmailError as exc:
+            return Response({'detail': str(exc), 'error_type': 'welcome_send_failed'}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({'detail': f'تم إرسال رسالة اختبار إلى {to_email}.', 'sent': True})
 
 
 class ChangePasswordView(APIView):

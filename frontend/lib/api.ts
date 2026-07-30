@@ -29,6 +29,9 @@ export type BusinessCard = {
   status: string;
   front_image_url: string;
   back_image_url: string;
+  welcome_status: string;
+  welcome_sent_at: string | null;
+  welcome_sent_to: string;
   created_at: string;
 };
 

@@ -16,6 +16,7 @@ cards_image = BusinessCardViewSet.as_view({'get': 'image'})
 cards_countries = BusinessCardViewSet.as_view({'get': 'countries'})
 cards_enrich = BusinessCardViewSet.as_view({'post': 'enrich'})
 cards_enrichment_status = BusinessCardViewSet.as_view({'get': 'enrichment_status'})
+cards_send_welcome = BusinessCardViewSet.as_view({'post': 'send_welcome'})
 
 urlpatterns = [
     path('health/', health),
@@ -32,6 +33,8 @@ urlpatterns = [
     path('cards/<int:pk>/enrich/', cards_enrich),
     path('cards/<int:pk>/enrichment', cards_enrichment_status),
     path('cards/<int:pk>/enrichment/', cards_enrichment_status),
+    path('cards/<int:pk>/send-welcome', cards_send_welcome),
+    path('cards/<int:pk>/send-welcome/', cards_send_welcome),
     path('cards/<int:pk>', cards_detail),
     path('cards/<int:pk>/', cards_detail),
     path('', include(router.urls)),

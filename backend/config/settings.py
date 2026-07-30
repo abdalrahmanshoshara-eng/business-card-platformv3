@@ -114,6 +114,7 @@ REST_FRAMEWORK = {
         'auth_login': os.getenv('THROTTLE_LOGIN', '10/min'),
         'auth_register': os.getenv('THROTTLE_REGISTER', '5/min'),
         'auth_forgot': os.getenv('THROTTLE_FORGOT', '5/min'),
+        'welcome_test': os.getenv('THROTTLE_WELCOME_TEST', '20/min'),
     },
 }
 
@@ -158,6 +159,10 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'false').lower() == 'true'
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@business-card-platform.local')
+
+# Welcome emails are ALWAYS sent FROM this single platform address (set in .env).
+# The user's profile sender_email is only used as Reply-To.
+WELCOME_FROM_EMAIL = os.getenv('WELCOME_FROM_EMAIL', '').strip() or DEFAULT_FROM_EMAIL
 
 # Uploaded card image limits.
 MAX_UPLOAD_IMAGE_MB = int(os.getenv('MAX_UPLOAD_IMAGE_MB', '10'))

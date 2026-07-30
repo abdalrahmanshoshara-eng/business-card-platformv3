@@ -1,5 +1,12 @@
 import { fetchJson, ensureCsrf } from '@/lib/api';
 
+export type WelcomeEmailConfig = {
+  sender_email: string;
+  welcome_subject: string;
+  welcome_message: string;
+  configured: boolean;
+};
+
 export type AuthUser = {
   id: number;
   username: string;
@@ -12,7 +19,15 @@ export type AuthUser = {
   is_superuser: boolean;
   date_joined?: string;
   last_login?: string | null;
+  welcome_email?: WelcomeEmailConfig;
 };
+
+// Fields accepted when saving the welcome-email config.
+export type WelcomeEmailUpdate = Partial<{
+  sender_email: string;
+  welcome_subject: string;
+  welcome_message: string;
+}>;
 
 export function isAdmin(user: AuthUser | null): boolean {
   return !!user && (user.is_staff || user.is_superuser);
@@ -53,7 +68,7 @@ export async function register(payload: RegisterPayload): Promise<AuthUser> {
   });
 }
 
-export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'email' | 'phone'>>): Promise<AuthUser> {
+export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'email' | 'phone'>> & WelcomeEmailUpdate): Promise<AuthUser> {
   return fetchJson<AuthUser>('/auth/profile', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -66,6 +81,14 @@ export async function changePassword(current_password: string, new_password: str
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ current_password, new_password, new_password_confirm }),
+  });
+}
+
+export async function sendWelcomeTest(to: string): Promise<{ detail?: string; sent?: boolean }> {
+  return fetchJson('/auth/welcome-test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to }),
   });
 }
 

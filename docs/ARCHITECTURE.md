@@ -191,3 +191,21 @@ python run_checks.py makemigrations --check --dry-run
 cd ../frontend && npx tsc --noEmit
 ```
 اختبارات المسار في `cards/tests_pipeline.py` تُموّه Gemini بالكامل (لا تستهلك رصيداً) وتؤكد عدد استدعاءات Gemini الفعلي.
+
+## 17. رسالة الترحيب (Welcome Email)
+
+عند إضافة كرت جديد يمكن لليوزر إرسال رسالة ترحيب **بضغطة زر واحدة** من **بريده الخاص** إلى بريد الكرت.
+
+### 17.1 الإعداد (بروفايل اليوزر)
+- يُضبط في `Profile` (`accounts/models.py`) بثلاثة حقول فقط: `sender_email`، `welcome_subject`، `welcome_message`. (أعمدة `smtp_*`/`sender_name` القديمة باقية في القاعدة لكنها غير مستخدمة، تُركت لتفادي migration حذفي.)
+- الحفظ عبر `PATCH /api/auth/profile`. العرض عبر `GET /api/auth/me` ضمن كائن `welcome_email` (يتضمّن `configured`).
+
+### 17.2 الإرسال
+- `POST /api/cards/{id}/send-welcome` (`BusinessCardViewSet.send_welcome`). يتحقق من: الملكية (scoped، 404 لغير المالك)، اكتمال الإعدادات (نص الرسالة مضبوط، وإلا `welcome_not_configured`)، وجود بريد على الكرت (المستلم = أول إيميل، أو `to` بشرط أن يكون ضمن إيميلات الكرت).
+- **مرة واحدة**: إن كانت الحالة `sent` يُعاد `already_sent` دون إرسال جديد؛ إعادة الإرسال تتطلب `resend=true`.
+- **الإرسال دائمًا من إيميل واحد للمنصة**: العنوان في `settings.WELCOME_FROM_EMAIL` (من `.env`، ويرجع إلى `DEFAULT_FROM_EMAIL`)، عبر اتصال Django الافتراضي `get_connection()` (إعدادات `EMAIL_*`). يظهر بريد المُرسِل الخاص باليوزر كاسم عرض في `From` فوق عنوان المنصة، ويُوضَع في `Reply-To` لتصله الردود. تُخزَّن الحالة على الكرت: `welcome_status` (`not_sent`/`sent`/`failed`)، `welcome_sent_at`، `welcome_sent_to`، `welcome_error`. لا تُعرض أخطاء الإرسال الخام للمستخدم.
+- **ملاحظة تسليم**: يجب على المشرف ضبط `WELCOME_FROM_EMAIL` و`EMAIL_HOST/PORT/USER/PASSWORD/TLS` في `.env` لتسليم فعلي (backend الافتراضي console يطبع فقط). بعض المزوّدين (Gmail) قد يعيدون كتابة `From` إلى الحساب المُصادَق عليه؛ يبقى `Reply-To` = بريد اليوزر.
+- الواجهة: بطاقة "إعدادات رسالة الترحيب" (ثلاثة حقول: بريد المُرسِل، العنوان، النص) في `app/profile`، وزر "إرسال رسالة ترحيب" في صفحة الرفع بعد الحفظ (يتحوّل إلى "تم الإرسال" مع خيار إعادة الإرسال).
+
+### 17.3 الاختبارات
+`cards/tests_welcome.py` (بريد مموّه عبر backend الذاكرة `mail.outbox`): حفظ الإعدادات الثلاثة، إرسال ناجح **من عنوان المنصة** مع اسم العرض وReply‑To، منع التكرار وإعادة الإرسال، غياب الإعدادات/المستلم، رفض مستلم خارج إيميلات الكرت، الملكية، وعدم تسريب خطأ الإرسال الخام.

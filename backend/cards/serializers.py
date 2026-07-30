@@ -45,9 +45,13 @@ class BusinessCardSerializer(serializers.ModelSerializer):
             'investment_type', 'investment_type_other',
             'raw_text', 'confidence', 'needs_review', 'review_notes', 'review_fields', 'website_visit_note',
             'status', 'front_image', 'back_image', 'front_image_url', 'back_image_url',
+            'welcome_status', 'welcome_sent_at', 'welcome_sent_to',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'sequence_number', 'created_at', 'updated_at', 'front_image_url', 'back_image_url']
+        read_only_fields = [
+            'id', 'sequence_number', 'created_at', 'updated_at', 'front_image_url', 'back_image_url',
+            'welcome_status', 'welcome_sent_at', 'welcome_sent_to',
+        ]
         extra_kwargs = {
             'front_image': {'required': False, 'allow_null': True},
             'back_image': {'required': False, 'allow_null': True},

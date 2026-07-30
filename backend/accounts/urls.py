@@ -12,6 +12,7 @@ from .views import (
     ProfileView,
     RegisterView,
     ResetPasswordView,
+    WelcomeTestView,
 )
 
 # Router keeps the trailing-slash URLs (used by tests and the browsable API).
@@ -42,6 +43,8 @@ auth_patterns = [
     path('auth/profile/', ProfileView.as_view()),
     path('auth/change-password', ChangePasswordView.as_view()),
     path('auth/change-password/', ChangePasswordView.as_view()),
+    path('auth/welcome-test', WelcomeTestView.as_view()),
+    path('auth/welcome-test/', WelcomeTestView.as_view()),
     path('auth/forgot-password', ForgotPasswordView.as_view()),
     path('auth/forgot-password/', ForgotPasswordView.as_view()),
     path('auth/reset-password', ResetPasswordView.as_view()),

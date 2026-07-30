@@ -77,6 +77,10 @@ function UploadPageInner() {
   const [enrichLoading, setEnrichLoading] = useState(false);
   const [enrichment, setEnrichment] = useState<EnrichmentResponse | null>(null);
 
+  // Welcome email (one-click, sent from the user's own mailbox).
+  const [welcomeSending, setWelcomeSending] = useState(false);
+  const [welcomeInfo, setWelcomeInfo] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   // Guards against double submission: an in-flight ref (survives re-renders /
   // React StrictMode) plus a stable idempotency key per attempt so a refresh or
   // timeout retry never bills Gemini twice.
@@ -134,6 +138,7 @@ function UploadPageInner() {
     setSavedCard(null);
     setDuplicate(null);
     setEnrichment(null);
+    setWelcomeInfo(null);
     markStep('upload', []);
     setStatus({ type: 'loading', text: 'جاري رفع الصور إلى الخادم...' });
 
@@ -187,6 +192,24 @@ function UploadPageInner() {
     } finally {
       inFlightRef.current = false;
       setLoading(false);
+    }
+  }
+
+  async function sendWelcome(resend: boolean) {
+    if (!savedCard || welcomeSending) return;
+    setWelcomeSending(true);
+    setWelcomeInfo(null);
+    try {
+      const data = await fetchJson<{ detail?: string; already_sent?: boolean; card?: BusinessCard }>(
+        `/cards/${savedCard.id}/send-welcome/`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resend }) },
+      );
+      if (data.card) setSavedCard(data.card);
+      setWelcomeInfo({ type: 'success', text: data.detail || 'تم إرسال رسالة الترحيب.' });
+    } catch (error: any) {
+      setWelcomeInfo({ type: 'error', text: error.message || 'تعذّر إرسال رسالة الترحيب.' });
+    } finally {
+      setWelcomeSending(false);
     }
   }
 
@@ -323,6 +346,7 @@ function UploadPageInner() {
                 setSavedCard(null);
                 setDuplicate(null);
                 setEnrichment(null);
+                setWelcomeInfo(null);
                 resetIdempotencyKey();
                 setStatus({ type: 'idle', text: 'تمت إعادة ضبط النموذج. اختر صورًا جديدة.' });
                 markStep('upload', []);
@@ -376,6 +400,35 @@ function UploadPageInner() {
             <label className={`full-width ${fieldClass('company_activity')}`}>نشاط الشركة <textarea readOnly value={previewData.company_activity || ''} /></label>
             <label className={`full-width ${fieldClass('address')}`}>العنوان <input readOnly value={previewData.address || ''} /></label>
           </div>
+        </section>
+      )}
+
+      {savedCard && (savedCard.emails || []).length > 0 && (
+        <section className="card">
+          <div className="section-head">
+            <h2>رسالة الترحيب</h2>
+            {savedCard.welcome_status === 'sent' && <span className="badge success">تم الإرسال</span>}
+            {savedCard.welcome_status === 'failed' && <span className="badge warning">فشل الإرسال</span>}
+          </div>
+          <p>
+            إرسال رسالة الترحيب من بريدك إلى بريد الكرت:{' '}
+            <strong dir="ltr">{savedCard.emails[0]}</strong>
+          </p>
+          <div className="button-row">
+            {savedCard.welcome_status === 'sent' ? (
+              <button type="button" className="btn btn-gold secondary" disabled={welcomeSending} onClick={() => sendWelcome(true)}>
+                {welcomeSending ? 'جارٍ الإرسال...' : 'إعادة الإرسال'}
+              </button>
+            ) : (
+              <button type="button" className="btn-gold" disabled={welcomeSending} onClick={() => sendWelcome(false)}>
+                {welcomeSending ? 'جارٍ الإرسال...' : 'إرسال رسالة ترحيب'}
+              </button>
+            )}
+          </div>
+          {welcomeInfo && <p className={`status-box ${welcomeInfo.type}`}>{welcomeInfo.text}</p>}
+          {savedCard.welcome_status !== 'sent' && !welcomeInfo && (
+            <p className="status-box">تأكد من ضبط إعدادات رسالة الترحيب في ملفك الشخصي قبل الإرسال.</p>
+          )}
         </section>
       )}
 

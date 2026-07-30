@@ -38,6 +38,7 @@ from .services.duplicates import (
 from .services.security import excel_safe, validate_image_upload
 from .services.usage import log_gemini_usage
 from .services.enrichment import get_cached_enrichment, run_enrichment
+from accounts.services_email import WelcomeEmailError, send_welcome_email
 
 logger = logging.getLogger(__name__)
 
@@ -631,6 +632,72 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response(self._enrichment_payload(request, card, row, reused))
+
+    # ── Welcome email (one-click, sent from the user's own mailbox) ─────────
+    @action(detail=True, methods=['post'], url_path='send-welcome')
+    def send_welcome(self, request, pk=None):
+        card = self.get_object()  # ownership-scoped (404 for others' cards)
+        profile = getattr(request.user, 'profile', None)
+        if profile is None or not profile.has_welcome_config():
+            return Response(
+                {'detail': 'يرجى ضبط إعدادات رسالة الترحيب (بريد المُرسِل وكلمة المرور والنص) في ملفك الشخصي أولاً.',
+                 'error_type': 'welcome_not_configured'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        card_emails = [str(e).strip() for e in (card.emails or []) if str(e).strip()]
+        requested = (request.data.get('to') or '').strip()
+        if requested:
+            if requested.lower() not in {e.lower() for e in card_emails}:
+                return Response(
+                    {'detail': 'البريد المحدد ليس ضمن إيميلات هذا الكرت.', 'error_type': 'invalid_recipient'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            to_email = requested
+        else:
+            to_email = card_emails[0] if card_emails else ''
+        if not to_email:
+            return Response(
+                {'detail': 'لا يوجد بريد إلكتروني على هذا الكرت لإرسال الترحيب إليه.', 'error_type': 'no_recipient'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        resend = _truthy(request.data.get('resend') or request.data.get('force'))
+        if card.welcome_status == BusinessCard.WELCOME_SENT and not resend:
+            return Response(
+                {'detail': 'تم إرسال رسالة الترحيب مسبقاً لهذا الكرت.', 'already_sent': True,
+                 'welcome_status': card.welcome_status,
+                 'card': BusinessCardSerializer(card, context={'request': request}).data},
+                status=status.HTTP_200_OK,
+            )
+
+        try:
+            send_welcome_email(
+                profile, to_email=to_email,
+                subject=profile.welcome_subject, body=profile.welcome_message,
+            )
+        except WelcomeEmailError as exc:
+            card.welcome_status = BusinessCard.WELCOME_FAILED
+            card.welcome_sent_to = to_email
+            card.welcome_error = str(exc)[:2000]
+            card.save(update_fields=['welcome_status', 'welcome_sent_to', 'welcome_error', 'updated_at'])
+            logger.warning('welcome_email_failed card_id=%s', card.id)
+            return Response(
+                {'detail': str(exc), 'error_type': 'welcome_send_failed', 'welcome_status': 'failed'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        card.welcome_status = BusinessCard.WELCOME_SENT
+        card.welcome_sent_at = timezone.now()
+        card.welcome_sent_to = to_email
+        card.welcome_error = ''
+        card.save(update_fields=['welcome_status', 'welcome_sent_at', 'welcome_sent_to', 'welcome_error', 'updated_at'])
+        logger.info('welcome_email_sent card_id=%s', card.id)
+        return Response(
+            {'detail': f'تم إرسال رسالة الترحيب إلى {to_email}.', 'welcome_status': 'sent',
+             'card': BusinessCardSerializer(card, context={'request': request}).data},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=['get'], url_path='stats')
     def stats(self, request):

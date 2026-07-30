@@ -47,6 +47,20 @@ class BusinessCard(models.Model):
     website_visit_note = models.TextField(blank=True)
     duplicate_hash = models.CharField(max_length=128, db_index=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
+    # Welcome-email send state (see accounts welcome-email feature). One-time by
+    # default; a resend is explicit.
+    WELCOME_NOT_SENT = 'not_sent'
+    WELCOME_SENT = 'sent'
+    WELCOME_FAILED = 'failed'
+    WELCOME_STATUS_CHOICES = [
+        (WELCOME_NOT_SENT, 'لم تُرسل'),
+        (WELCOME_SENT, 'تم الإرسال'),
+        (WELCOME_FAILED, 'فشل الإرسال'),
+    ]
+    welcome_status = models.CharField(max_length=20, choices=WELCOME_STATUS_CHOICES, default=WELCOME_NOT_SENT, db_index=True)
+    welcome_sent_at = models.DateTimeField(null=True, blank=True)
+    welcome_sent_to = models.EmailField(blank=True)
+    welcome_error = models.TextField(blank=True)
     front_image = models.ImageField(upload_to='cards/front/', blank=True, null=True)
     back_image = models.ImageField(upload_to='cards/back/', blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)

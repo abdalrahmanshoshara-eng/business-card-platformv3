@@ -9,6 +9,30 @@ from .models import Profile
 
 User = get_user_model()
 
+# Welcome-email config fields editable via the profile (kept intentionally
+# minimal: sender email, subject, message). The actual From account is a single
+# platform email in settings, not per user.
+WELCOME_CONFIG_FIELDS = ('sender_email', 'welcome_subject', 'welcome_message')
+
+
+def get_welcome_config(user) -> dict:
+    profile = getattr(user, 'profile', None)
+    if not profile:
+        return {'sender_email': '', 'welcome_subject': '', 'welcome_message': '', 'configured': False}
+    return {
+        'sender_email': profile.sender_email,
+        'welcome_subject': profile.welcome_subject,
+        'welcome_message': profile.welcome_message,
+        'configured': profile.has_welcome_config(),
+    }
+
+
+def set_welcome_config(user, data: dict) -> None:
+    """Persist the welcome-email config. Only provided keys change."""
+    defaults = {field: data[field] for field in WELCOME_CONFIG_FIELDS if field in data}
+    if defaults:
+        Profile.objects.update_or_create(user=user, defaults=defaults)
+
 
 def normalize_email(value: str) -> str:
     return (value or '').strip().lower()
@@ -44,17 +68,22 @@ class UserSerializer(serializers.ModelSerializer):
     client escalate privileges (is_staff/is_superuser are read-only)."""
 
     phone = serializers.SerializerMethodField()
+    welcome_email = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'phone',
             'is_active', 'is_staff', 'is_superuser', 'date_joined', 'last_login',
+            'welcome_email',
         ]
         read_only_fields = ['id', 'is_staff', 'is_superuser', 'date_joined', 'last_login']
 
     def get_phone(self, obj):
         return get_phone(obj)
+
+    def get_welcome_email(self, obj):
+        return get_welcome_config(obj)
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -108,13 +137,20 @@ class LoginSerializer(serializers.Serializer):
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
-    """A user editing their own profile: name, email, phone."""
+    """A user editing their own profile: name, email, phone, welcome-email config."""
 
     phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
+    # Welcome-email config: sender email, subject, message (all optional).
+    sender_email = serializers.EmailField(required=False, allow_blank=True)
+    welcome_subject = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    welcome_message = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'email', 'phone']
+        fields = [
+            'first_name', 'last_name', 'email', 'phone',
+            'sender_email', 'welcome_subject', 'welcome_message',
+        ]
 
     def validate_email(self, value):
         value = normalize_email(value)
@@ -122,10 +158,16 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('البريد الإلكتروني مستخدم بالفعل.')
         return value
 
+    def validate_sender_email(self, value):
+        return normalize_email(value)
+
     def update(self, instance, validated_data):
         phone = validated_data.pop('phone', None)
+        welcome = {field: validated_data.pop(field) for field in WELCOME_CONFIG_FIELDS if field in validated_data}
         instance = super().update(instance, validated_data)
         set_phone(instance, phone)
+        if welcome:
+            set_welcome_config(instance, welcome)
         return instance
 
 

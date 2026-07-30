@@ -12,5 +12,25 @@ class Profile(models.Model):
     )
     phone = models.CharField(max_length=30, blank=True)
 
+    # ── Welcome-email settings ─────────────────────────────────────────────
+    # Delivery always goes through ONE platform mail account (settings.
+    # WELCOME_FROM_EMAIL / EMAIL_*). Each user only sets THREE things: their
+    # sender email (shown to the recipient and used as Reply-To), a subject and
+    # a message. The other columns below are retained (unused) from the earlier
+    # per-user-SMTP design to avoid a destructive migration.
+    sender_email = models.EmailField(blank=True)
+    sender_name = models.CharField(max_length=150, blank=True)   # unused (kept for history)
+    smtp_host = models.CharField(max_length=255, blank=True)
+    smtp_port = models.PositiveIntegerField(default=587)
+    smtp_use_tls = models.BooleanField(default=True)
+    smtp_username = models.CharField(max_length=255, blank=True)
+    smtp_password_encrypted = models.TextField(blank=True)
+    welcome_subject = models.CharField(max_length=255, blank=True)
+    welcome_message = models.TextField(blank=True)
+
+    def has_welcome_config(self) -> bool:
+        """True when the profile can send a welcome email (a message is set)."""
+        return bool(self.welcome_message.strip())
+
     def __str__(self):
         return f'Profile<{self.user_id}>'
