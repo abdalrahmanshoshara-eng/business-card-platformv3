@@ -183,8 +183,15 @@ GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60')
 # rate-limit, so the manager stops retrying an exhausted key and uses others.
 GEMINI_KEY_QUOTA_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_QUOTA_COOLDOWN_SECONDS', '900'))
 # When ALL keys are momentarily rate-limited, wait up to this many seconds for
-# the earliest cooldown to lapse and retry, so a burst self-heals for the user.
-GEMINI_ALL_KEYS_WAIT_SECONDS = int(os.getenv('GEMINI_ALL_KEYS_WAIT_SECONDS', '30'))
+# the earliest cooldown to lapse and retry. Kept small so the extraction request
+# never approaches the gateway timeout.
+GEMINI_ALL_KEYS_WAIT_SECONDS = int(os.getenv('GEMINI_ALL_KEYS_WAIT_SECONDS', '8'))
+
+# Website enrichment fetch bounds — keep the inline visit fast so extraction
+# never trips a 504 on a slow company website.
+WEBSITE_FETCH_TIMEOUT = float(os.getenv('WEBSITE_FETCH_TIMEOUT', '6'))
+WEBSITE_FETCH_MAX_SECONDS = float(os.getenv('WEBSITE_FETCH_MAX_SECONDS', '15'))
+WEBSITE_FETCH_MAX_PAGES = int(os.getenv('WEBSITE_FETCH_MAX_PAGES', '3'))
 # NOTE: the old per-card "request budget" (GEMINI_MAX_REQUESTS_PER_CARD) was
 # removed — extraction now makes a single Gemini call, so there is no budget to
 # exceed. The variable is intentionally no longer read.

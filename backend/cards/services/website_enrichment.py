@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlparse
 
@@ -119,14 +120,27 @@ def _important_links(base_url: str, soup: BeautifulSoup, limit: int = 10) -> lis
     return links
 
 
-def fetch_website_text(url: str, timeout: float = 12.0) -> tuple[str, str]:
+def fetch_website_text(url: str, timeout: float | None = None) -> tuple[str, str]:
+    """Fetch a bounded amount of a company's site text.
+
+    Hard limits keep this fast so it can run inside the extraction request
+    without ever tripping a gateway timeout: a short per-request timeout, a small
+    cap on how many pages are fetched, and an overall wall-clock deadline.
+    """
     if not url:
         return '', 'لا يوجد موقع.'
+
+    timeout = float(timeout if timeout is not None else getattr(settings, 'WEBSITE_FETCH_TIMEOUT', 6.0))
+    max_total = float(getattr(settings, 'WEBSITE_FETCH_MAX_SECONDS', 15.0))
+    max_pages = int(getattr(settings, 'WEBSITE_FETCH_MAX_PAGES', 3))
+    deadline = time.perf_counter() + max_total
 
     headers = {'User-Agent': 'Mozilla/5.0 BusinessCardPlatform/1.0', 'Accept-Language': 'ar,en;q=0.9'}
     errors = []
     with httpx.Client(timeout=timeout, follow_redirects=True, headers=headers, verify=True) as client:
         for candidate in _candidate_urls(url):
+            if time.perf_counter() > deadline:
+                break
             if not is_public_http_url(candidate):
                 errors.append(f'{candidate}: عنوان غير مسموح')
                 continue
@@ -135,7 +149,10 @@ def fetch_website_text(url: str, timeout: float = 12.0) -> tuple[str, str]:
                 res.raise_for_status()
                 text, title, soup = _clean_html(res.text)
                 pages = [PageText(str(res.url), title, text[:5000], 40)] if text else []
-                for index, link in enumerate(_important_links(str(res.url), soup)):
+                # Only a few extra pages, and stop the moment the budget is spent.
+                for index, link in enumerate(_important_links(str(res.url), soup, limit=max_pages)):
+                    if time.perf_counter() > deadline:
+                        break
                     if not is_public_http_url(link):
                         continue
                     try:
