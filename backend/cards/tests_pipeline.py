@@ -333,6 +333,23 @@ class RetryPolicyTests(PipelineTestCase):
         self.assertEqual(BusinessCard.objects.count(), 0)
 
 
+@override_settings(**{**TEST_SETTINGS, 'GEMINI_API_KEYS': ['k1', 'k2']})
+class QuotaFailoverTests(PipelineTestCase):
+    def test_429_detected_by_status_code_switches_to_next_key(self):
+        client, _ = auth_client()
+
+        class Quota429(RuntimeError):
+            code = 429  # google-genai style; message intentionally lacks '429'/'quota'
+
+        err = Quota429('You have exceeded the allowed limit for this model.')
+        good = card_response(person_name='Q', company_name='C', mobile_numbers=['+963 944 000 111'])
+        with mock_gemini([err, good]) as models:
+            res = client.post('/api/cards/extract', {'front': upload()}, format='multipart')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(models.calls, 2)  # first key hit the limit → switched to the second key
+        self.assertEqual(BusinessCard.objects.count(), 1)
+
+
 @override_settings(GEMINI_API_KEYS=['KEY1', 'KEY2', 'KEY3'])
 class GeminiKeySelectionTests(PipelineTestCase):
     def test_strict_priority_prefers_first_key(self):

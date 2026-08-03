@@ -92,8 +92,8 @@ class GeminiKeyManager:
                 state.last_reason = reason
         logger.warning('gemini_key_failed selected_key_index=%s key_failed_reason=%s key_disabled=true', index, reason)
 
-    def mark_cooldown(self, index: int, reason: str = 'rate_limit') -> None:
-        cooldown_seconds = int(getattr(settings, 'GEMINI_KEY_COOLDOWN_SECONDS', 60))
+    def mark_cooldown(self, index: int, reason: str = 'rate_limit', seconds: int | None = None) -> None:
+        cooldown_seconds = int(seconds if seconds is not None else getattr(settings, 'GEMINI_KEY_COOLDOWN_SECONDS', 60))
         with self._lock:
             state = self._states.get(index)
             if state:

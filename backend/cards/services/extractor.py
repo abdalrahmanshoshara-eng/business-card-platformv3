@@ -109,10 +109,20 @@ Treat the two images as one card. Merge complementary information into a single
 result. Do NOT duplicate a person or emit two records.
 
 Rules:
-- Extract identity and contact data only. Never invent values; leave unknown
-  fields empty ("" or []).
+- Extract identity and contact data only. Never invent contact values
+  (phones, emails, website, address); leave unknown fields empty ("" or []).
 - Prefer printed data over handwritten notes.
-- For _ar / _en fields, copy the printed language version exactly. Do not translate names.
+- ALWAYS provide BOTH Arabic and English for these three fields, even when the
+  card shows only one language:
+  person_name_ar & person_name_en, job_title_ar & job_title_en,
+  company_name_ar & company_name_en.
+    • Keep the printed-language version exactly as printed.
+    • Fill the MISSING language yourself:
+        - person_name: transliterate faithfully to the other script — do NOT
+          translate the meaning. e.g. "عبد الرحمن" ⇄ "Abdalrahman", "Sara" ⇄ "سارة".
+        - job_title and company_name: translate accurately to the other language
+          (e.g. "مدير التسويق" ⇄ "Marketing Manager").
+    • Also set the combined base fields (person_name, job_title, company_name).
 - company_activity must be Arabic when clearly printed or strongly implied.
 - investment_type must be one of the official Arabic values when clear; otherwise
   use "غير ذلك" and put the free value in investment_type_other.
@@ -213,17 +223,39 @@ def _safe_error_summary(exc: Exception) -> str:
     return text[:240]
 
 
+def _status_code_of(exc: Exception):
+    """Best-effort HTTP status code from a google-genai / requests-style error,
+    so classification doesn't rely on the message text alone."""
+    for attr in ('code', 'status_code', 'http_status'):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            return value
+    response = getattr(exc, 'response', None)
+    value = getattr(response, 'status_code', None)
+    return value if isinstance(value, int) else None
+
+
 def _classify_exception(exc: Exception) -> tuple[str, int, str, bool]:
     if isinstance(exc, ExtractionError):
         return exc.category, exc.status_code, str(exc), exc.recoverable
 
     text = _error_text(exc).lower()
+    status_code = _status_code_of(exc)
+    status_name = str(getattr(exc, 'status', '') or '').lower()
 
     if 'did not return json' in text or ('json' in text and isinstance(exc, (ValueError, json.JSONDecodeError))):
         return 'extraction_parse_error', 502, 'تعذر قراءة استجابة Gemini بصيغة JSON صحيحة.', True
     if 'timeout' in text or 'deadline' in text or 'timed out' in text:
         return 'gemini_timeout', 504, 'انتهت مهلة الاتصال مع Gemini. يرجى المحاولة بصورة أصغر أو لاحقاً.', True
-    if any(token in text for token in ('resource_exhausted', '429', 'rate limit', 'too many requests')):
+    # Detect quota/rate-limit by HTTP 429 or RESOURCE_EXHAUSTED status too — not
+    # just the message text — so a key that hit its limit reliably triggers a
+    # switch to the next key.
+    _is_429 = status_code == 429 or status_name == 'resource_exhausted' or any(
+        token in text for token in ('resource_exhausted', '429', 'rate limit', 'too many requests')
+    )
+    if _is_429 and ('quota' in text or 'rpd' in text or 'requests per day' in text or 'per day' in text):
+        return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini المتاحة حالياً. يرجى المحاولة لاحقاً أو استخدام مفتاح آخر.', False
+    if _is_429:
         return 'gemini_rate_limit', 429, 'تم الوصول إلى حد استخدام Gemini. يرجى المحاولة لاحقاً.', False
     if 'quota' in text or 'rpd' in text or 'requests per day' in text:
         return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini المتاحة حالياً. يرجى المحاولة لاحقاً أو استخدام مفتاح آخر.', False
@@ -384,7 +416,14 @@ def _call_gemini_once(image_paths: list[str | Path], user_instruction: str, cont
                 last_error = ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc)
                 continue
             if category in {'gemini_rate_limit', 'gemini_quota_exceeded'}:
-                gemini_key_manager.mark_cooldown(key_index, category)
+                # Daily-quota exhaustion lasts far longer than a burst rate limit,
+                # so cool that key down for much longer to stop wasting calls on
+                # it and let other keys take over.
+                cooldown = (
+                    int(getattr(settings, 'GEMINI_KEY_QUOTA_COOLDOWN_SECONDS', 900))
+                    if category == 'gemini_quota_exceeded' else None
+                )
+                gemini_key_manager.mark_cooldown(key_index, category, seconds=cooldown)
                 last_error = ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc)
                 continue
             raise ExtractionError(message, category=category, status_code=code, recoverable=recoverable, original=exc) from exc

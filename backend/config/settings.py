@@ -179,6 +179,9 @@ if not GEMINI_API_KEYS and GEMINI_API_KEY:
     # Backward compatibility with old single-key deployments.
     GEMINI_API_KEYS = [GEMINI_API_KEY]
 GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60'))
+# Daily-quota (RPD) exhaustion cools a key down for much longer than a burst
+# rate-limit, so the manager stops retrying an exhausted key and uses others.
+GEMINI_KEY_QUOTA_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_QUOTA_COOLDOWN_SECONDS', '900'))
 # NOTE: the old per-card "request budget" (GEMINI_MAX_REQUESTS_PER_CARD) was
 # removed — extraction now makes a single Gemini call, so there is no budget to
 # exceed. The variable is intentionally no longer read.

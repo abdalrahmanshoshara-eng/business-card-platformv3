@@ -498,13 +498,13 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             logger.info('card_duplicate_handled existing_id=%s updated_fields=%s', existing.id, updated_fields)
             return Response(payload, status=status.HTTP_200_OK)
 
-        # User's per-extraction choice: visit the company website to determine
-        # its activity. Enrichment is cached per domain, so a repeated company
-        # costs nothing extra. If the activity stays undetermined (whether the
-        # user skipped the visit or the visit found nothing), the card is flagged
-        # for review.
+        # Visit the company website to determine its activity ONLY when the card
+        # itself didn't already give us one — this saves a Gemini call (and quota)
+        # for every card whose activity is already known. Enrichment is cached per
+        # domain, so a repeated company costs nothing extra.
+        activity_known = bool((prepared.get('company_activity') or '').strip())
         enrichment_payload = None
-        if visit_website and prepared.get('website'):
+        if not activity_known and prepared.get('website'):
             try:
                 enr_row, enr_reused = run_enrichment(prepared['website'], owner=request.user, card=None)
             except Exception:
@@ -512,18 +512,19 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 enr_row, enr_reused = None, False
             if enr_row is not None:
                 enrichment_payload = {'reused': enr_reused, 'status': enr_row.status}
-                if enr_row.status == CompanyDomainEnrichment.STATUS_COMPLETED and not (prepared.get('company_activity') or '').strip():
+                if enr_row.status == CompanyDomainEnrichment.STATUS_COMPLETED:
                     inferred = (enr_row.industry or enr_row.company_description or '').strip()
                     if inferred:
                         prepared['company_activity'] = inferred[:500]
 
+        # Still no activity (no website, or the visit found nothing) → flag review.
         if not (prepared.get('company_activity') or '').strip():
             prepared['needs_review'] = True
             review_fields = list(prepared.get('review_fields') or [])
             if 'company_activity' not in review_fields:
                 review_fields.append('company_activity')
             prepared['review_fields'] = review_fields
-            note = 'لم يُحدَّد نشاط الشركة' + ('' if visit_website else ' (لم تُطلب زيارة الموقع)')
+            note = 'لم يُحدَّد نشاط الشركة'
             prepared['review_notes'] = ' | '.join(p for p in [prepared.get('review_notes', ''), note] if p)
 
         front.seek(0)
@@ -580,7 +581,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             'saved': True,
             'card': BusinessCardSerializer(card, context={'request': request}).data,
             'message': f'تم حفظ الكرت كسجل رقم {card.sequence_number}',
-            'website_visited': bool(visit_website),
+            'website_visited': enrichment_payload is not None,
         }
         if enrichment_payload is not None:
             payload['enrichment'] = enrichment_payload
