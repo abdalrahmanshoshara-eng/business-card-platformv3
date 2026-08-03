@@ -182,6 +182,9 @@ GEMINI_KEY_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_COOLDOWN_SECONDS', '60')
 # Daily-quota (RPD) exhaustion cools a key down for much longer than a burst
 # rate-limit, so the manager stops retrying an exhausted key and uses others.
 GEMINI_KEY_QUOTA_COOLDOWN_SECONDS = int(os.getenv('GEMINI_KEY_QUOTA_COOLDOWN_SECONDS', '900'))
+# When ALL keys are momentarily rate-limited, wait up to this many seconds for
+# the earliest cooldown to lapse and retry, so a burst self-heals for the user.
+GEMINI_ALL_KEYS_WAIT_SECONDS = int(os.getenv('GEMINI_ALL_KEYS_WAIT_SECONDS', '30'))
 # NOTE: the old per-card "request budget" (GEMINI_MAX_REQUESTS_PER_CARD) was
 # removed — extraction now makes a single Gemini call, so there is no budget to
 # exceed. The variable is intentionally no longer read.

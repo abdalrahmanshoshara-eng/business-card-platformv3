@@ -382,6 +382,15 @@ class GeminiKeySelectionTests(PipelineTestCase):
         self.assertIsNone(gemini_key_manager.get_candidate(set()))
         self.assertEqual(gemini_key_manager.exhaustion_reason(set()), 'all_gemini_keys_rate_limited')
 
+    def test_seconds_until_available_reports_min_cooldown(self):
+        gemini_key_manager.get_candidate(set())  # prime key states
+        self.assertEqual(gemini_key_manager.seconds_until_available(), 0.0)  # a key is free
+        for index, secs in ((0, 50), (1, 20), (2, 40)):
+            gemini_key_manager.mark_cooldown(index, 'gemini_rate_limit', seconds=secs)
+        remaining = gemini_key_manager.seconds_until_available()
+        self.assertIsNotNone(remaining)
+        self.assertTrue(15.0 < remaining <= 20.0)
+
 
 @override_settings(**TEST_SETTINGS)
 class DomainNormalizationTests(PipelineTestCase):

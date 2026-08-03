@@ -247,18 +247,23 @@ def _classify_exception(exc: Exception) -> tuple[str, int, str, bool]:
         return 'extraction_parse_error', 502, 'تعذر قراءة استجابة Gemini بصيغة JSON صحيحة.', True
     if 'timeout' in text or 'deadline' in text or 'timed out' in text:
         return 'gemini_timeout', 504, 'انتهت مهلة الاتصال مع Gemini. يرجى المحاولة بصورة أصغر أو لاحقاً.', True
-    # Detect quota/rate-limit by HTTP 429 or RESOURCE_EXHAUSTED status too — not
-    # just the message text — so a key that hit its limit reliably triggers a
-    # switch to the next key.
+    # Detect a 429 by HTTP status / RESOURCE_EXHAUSTED too — not just text — so a
+    # key that hit its limit reliably triggers a switch to the next key.
     _is_429 = status_code == 429 or status_name == 'resource_exhausted' or any(
         token in text for token in ('resource_exhausted', '429', 'rate limit', 'too many requests')
     )
-    if _is_429 and ('quota' in text or 'rpd' in text or 'requests per day' in text or 'per day' in text):
-        return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini المتاحة حالياً. يرجى المحاولة لاحقاً أو استخدام مفتاح آخر.', False
+    # Only a DAILY limit deserves the long cooldown. Google's per-minute (RPM)
+    # 429s also say "quota", so require an explicit daily marker — otherwise a
+    # momentary burst would wrongly lock every key for the long cooldown.
+    _is_daily = any(token in text for token in (
+        'per day', 'perday', 'requests per day', 'per-day', 'daily limit', 'quota per day',
+    ))
     if _is_429:
-        return 'gemini_rate_limit', 429, 'تم الوصول إلى حد استخدام Gemini. يرجى المحاولة لاحقاً.', False
-    if 'quota' in text or 'rpd' in text or 'requests per day' in text:
-        return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini المتاحة حالياً. يرجى المحاولة لاحقاً أو استخدام مفتاح آخر.', False
+        if _is_daily:
+            return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini اليومية على كل المفاتيح. يرجى المحاولة لاحقاً أو إضافة مفاتيح من حسابات أخرى.', False
+        return 'gemini_rate_limit', 429, 'تم الوصول إلى حد الطلبات اللحظي في Gemini. تتم إعادة المحاولة تلقائياً بعد قليل.', False
+    if _is_daily:
+        return 'gemini_quota_exceeded', 429, 'انتهت حصة Gemini اليومية. يرجى المحاولة لاحقاً أو إضافة مفاتيح من حسابات أخرى.', False
     if 'api_key_invalid' in text or 'api key not valid' in text or 'invalid api key' in text or 'api key is invalid' in text:
         return 'gemini_invalid_api_key', 502, 'مفتاح Gemini API غير صالح. يرجى التحقق من إعدادات الخادم.', False
     if 'unauthenticated' in text or 'permission denied' in text or 'forbidden' in text:
@@ -467,15 +472,25 @@ def _extract_single_call(front_image, back_image, context: dict) -> ExtractionRe
             )
         except ExtractionError as exc:
             last_error = exc
-            if exc.category not in RETRYABLE_CATEGORIES or attempt >= max_retries:
+            waitable = exc.category in {'all_gemini_keys_rate_limited', 'all_gemini_keys_exhausted'}
+            if (exc.category not in RETRYABLE_CATEGORIES and not waitable) or attempt >= max_retries:
                 raise
-            # A truncated JSON won't fix itself on retry — give the next attempt
-            # a bigger output budget instead of just waiting.
-            if exc.category == 'gemini_output_truncated':
-                token_budget = min(token_budget * 2, 8192)
-                logger.warning('gemini_output_truncated bumping max_output_tokens=%s', token_budget)
-            delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
-            logger.warning('gemini_retry attempt=%s category=%s sleep=%.2fs', attempt + 1, exc.category, delay)
+            if waitable:
+                # Every key is momentarily rate-limited (per-minute limit). Wait
+                # for the earliest key's cooldown to lapse, then retry — so a
+                # transient burst self-heals instead of erroring to the user.
+                remaining = gemini_key_manager.seconds_until_available()
+                cap = float(getattr(settings, 'GEMINI_ALL_KEYS_WAIT_SECONDS', 30))
+                delay = min(max(remaining or base_delay, 1.0), cap)
+                logger.warning('gemini_all_keys_cooldown_wait attempt=%s sleep=%.1fs', attempt + 1, delay)
+            else:
+                # A truncated JSON won't fix itself on retry — give the next
+                # attempt a bigger output budget instead of just waiting.
+                if exc.category == 'gemini_output_truncated':
+                    token_budget = min(token_budget * 2, 8192)
+                    logger.warning('gemini_output_truncated bumping max_output_tokens=%s', token_budget)
+                delay = base_delay * (2 ** attempt) + random.uniform(0, base_delay)
+                logger.warning('gemini_retry attempt=%s category=%s sleep=%.2fs', attempt + 1, exc.category, delay)
             time.sleep(delay)
             attempt += 1
 

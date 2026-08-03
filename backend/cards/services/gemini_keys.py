@@ -59,6 +59,21 @@ class GeminiKeyManager:
                 if not self._states[index].disabled and self._states[index].cooldown_until <= now
             )
 
+    def seconds_until_available(self) -> float | None:
+        """Shortest remaining cooldown among non-disabled keys (0 if one is free
+        now, None if there are no usable keys). Used to wait out a burst limit."""
+        keys = self._keys()
+        if not keys:
+            return None
+        now = time.time()
+        with self._lock:
+            remaining = [
+                max(0.0, self._states[index].cooldown_until - now)
+                for index in range(len(keys))
+                if not self._states[index].disabled
+            ]
+        return min(remaining) if remaining else None
+
     def get_candidate(self, tried_indexes: set[int]) -> tuple[int, str] | None:
         """Strict-priority selection: always prefer the FIRST key in
         ``GEMINI_API_KEYS`` order, only moving to the next one when an earlier key
