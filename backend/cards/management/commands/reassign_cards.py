@@ -8,9 +8,10 @@ If two cards would end up under the same owner with an identical
 colliding card's hash is re-salted (base kept, a unique suffix added) so BOTH
 cards survive as separate rows — nothing is merged and nothing is lost.
 
+    # --to / --from accept either a username OR an email (case-insensitive).
     python manage.py reassign_cards --to newuser               # move ALL cards
-    python manage.py reassign_cards --to newuser --from admin  # only admin's cards
-    python manage.py reassign_cards --to newuser --dry-run     # preview only
+    python manage.py reassign_cards --to user@example.com --from admin@example.com
+    python manage.py reassign_cards --to user@example.com --from admin --dry-run
 """
 from __future__ import annotations
 
@@ -30,34 +31,41 @@ def _resalt(existing_hash: str) -> str:
     return f'{base[:64]}:{uuid.uuid4().hex}'[:128]
 
 
+def _resolve_user(identifier: str):
+    """Find a user by username OR email (case-insensitive). Returns None if not found."""
+    identifier = (identifier or '').strip()
+    return (
+        User.objects.filter(username__iexact=identifier).first()
+        or User.objects.filter(email__iexact=identifier).first()
+    )
+
+
 class Command(BaseCommand):
     help = 'Reassign ownership of business cards to another user (no data/image loss).'
 
     def add_arguments(self, parser):
         parser.add_argument('--to', dest='to_user', required=True,
-                            help='Username of the account that will OWN the cards.')
+                            help='Username OR email of the account that will OWN the cards.')
         parser.add_argument('--from', dest='from_user',
-                            help='Only reassign cards currently owned by this username. '
+                            help='Only reassign cards currently owned by this username/email. '
                                  'If omitted, ALL cards are reassigned.')
         parser.add_argument('--dry-run', action='store_true',
                             help='Preview only; write nothing.')
 
     def handle(self, *args, **opts):
-        to_username = opts['to_user']
-        from_username = opts.get('from_user')
+        to_user = opts['to_user']
+        from_user = opts.get('from_user')
         dry = opts.get('dry_run')
 
-        try:
-            target = User.objects.get(username=to_username)
-        except User.DoesNotExist:
-            raise CommandError(f'المستخدم الهدف "{to_username}" غير موجود. أنشئه أولاً.')
+        target = _resolve_user(to_user)
+        if target is None:
+            raise CommandError(f'المستخدم الهدف "{to_user}" غير موجود (بحثنا بالاسم والبريد). أنشئه أولاً.')
 
         qs = BusinessCard.objects.all()
-        if from_username:
-            try:
-                source = User.objects.get(username=from_username)
-            except User.DoesNotExist:
-                raise CommandError(f'المستخدم المصدر "{from_username}" غير موجود.')
+        if from_user:
+            source = _resolve_user(from_user)
+            if source is None:
+                raise CommandError(f'المستخدم المصدر "{from_user}" غير موجود (بحثنا بالاسم والبريد).')
             qs = qs.filter(owner=source)
 
         movable = qs.exclude(owner=target)
