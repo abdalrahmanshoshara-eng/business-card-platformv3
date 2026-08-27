@@ -39,6 +39,7 @@ from .services.security import excel_safe, validate_image_upload
 from .services.usage import log_gemini_usage
 from .services.enrichment import get_cached_enrichment, run_enrichment
 from accounts.services_email import WelcomeEmailError, send_welcome_email
+from .services.welcome_text import build_welcome_sections
 
 logger = logging.getLogger(__name__)
 
@@ -672,9 +673,18 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
+        # One block per language the card is printed in (Arabic always first),
+        # each opened with a salutation tailored to this card's holder. Should
+        # composing them fail for any reason, fall back to the single-block
+        # behaviour rather than turning a send into a 500.
+        try:
+            sections = build_welcome_sections(card, profile)
+        except Exception:
+            logger.exception('welcome_sections_failed card_id=%s', card.id)
+            sections = None
         try:
             send_welcome_email(
-                profile, to_email=to_email,
+                profile, to_email=to_email, sections=sections,
                 subject=profile.welcome_subject, body=profile.welcome_message,
             )
         except WelcomeEmailError as exc:

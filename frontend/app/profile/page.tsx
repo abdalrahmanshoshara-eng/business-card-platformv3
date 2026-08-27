@@ -8,6 +8,10 @@ import { RequireAuth } from '@/features/auth/Guard';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { changePassword, updateProfile } from '@/features/auth/api';
 
+// The backend replaces this placeholder with a salutation tailored to each
+// card's holder. Keep it in sync with accounts/welcome_templates.py.
+const SALUTATION_TOKEN = '{{salutation}}';
+
 function ProfileInner() {
   const { user, setUser, isAdmin } = useAuth();
 
@@ -20,7 +24,9 @@ function ProfileInner() {
   const [savingPwd, setSavingPwd] = useState(false);
 
   const [welcome, setWelcome] = useState({
-    sender_email: '', welcome_subject: 'رسالة ترحيب', welcome_message: '',
+    sender_email: '',
+    welcome_subject: '', welcome_message: '',
+    welcome_subject_en: '', welcome_message_en: '',
   });
   const [welcomeMsg, setWelcomeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingWelcome, setSavingWelcome] = useState(false);
@@ -37,8 +43,10 @@ function ProfileInner() {
       if (w) {
         setWelcome({
           sender_email: w.sender_email || '',
-          welcome_subject: w.welcome_subject || 'رسالة ترحيب',
+          welcome_subject: w.welcome_subject || '',
           welcome_message: w.welcome_message || '',
+          welcome_subject_en: w.welcome_subject_en || '',
+          welcome_message_en: w.welcome_message_en || '',
         });
       }
     }
@@ -158,7 +166,15 @@ function ProfileInner() {
             {isAdmin && <Link href="/welcome-test" className="download">اختبار الإرسال</Link>}
           </div>
           <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
-            أدخل بريد المُرسِل، وعنوان الرسالة، ونصّها. تُرسَل الرسالة عبر بريد المنصة ويظهر بريدك كمُرسِل وكعنوان للرد.
+            أدخل بريد المُرسِل. تُرسَل الرسالة عبر بريد المنصة ويظهر بريدك كمُرسِل وكعنوان للرد.
+            النصّان أدناه معبّآن بالرسالة الرسمية المعتمدة؛ عدّلهما فقط إذا أردت صياغة خاصة بك،
+            وأي نصّ تتركه كما هو يبقى على الصيغة المعتمدة.
+          </p>
+          <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
+            تُرسَل الرسالة بلغة الكرت: كرت عربي يستلم النصّ العربي وحده، وكرت بلغة أخرى يستلم
+            النصّ العربي والنصّ بلغته في بريد واحد، وتبدأ بتحية مناسبة لصاحب الكرت.
+            <code style={{ margin: '0 4px' }}>{SALUTATION_TOKEN}</code>
+            هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال نصّك كما هو دون تحية.
           </p>
           <form onSubmit={saveWelcome}>
             <label htmlFor="sender_email">بريد المُرسِل</label>
@@ -166,13 +182,19 @@ function ProfileInner() {
               onChange={(e) => setWelcome((w) => ({ ...w, sender_email: e.target.value }))}
               placeholder="you@example.com" />
 
-            <label htmlFor="welcome_subject">عنوان الرسالة</label>
+            <label htmlFor="welcome_subject">عنوان الرسالة (عربي)</label>
             <input id="welcome_subject" type="text" value={welcome.welcome_subject}
               onChange={(e) => setWelcome((w) => ({ ...w, welcome_subject: e.target.value }))} />
-            <label htmlFor="welcome_message">نص رسالة الترحيب</label>
-            <textarea id="welcome_message" rows={5} value={welcome.welcome_message}
-              onChange={(e) => setWelcome((w) => ({ ...w, welcome_message: e.target.value }))}
-              placeholder="مرحبًا بك، سعدنا بلقائك…" />
+            <label htmlFor="welcome_message">نص الرسالة (عربي)</label>
+            <textarea id="welcome_message" rows={12} value={welcome.welcome_message}
+              onChange={(e) => setWelcome((w) => ({ ...w, welcome_message: e.target.value }))} />
+
+            <label htmlFor="welcome_subject_en">عنوان الرسالة (اللغة الثانية)</label>
+            <input id="welcome_subject_en" type="text" dir="ltr" value={welcome.welcome_subject_en}
+              onChange={(e) => setWelcome((w) => ({ ...w, welcome_subject_en: e.target.value }))} />
+            <label htmlFor="welcome_message_en">نص الرسالة (اللغة الثانية)</label>
+            <textarea id="welcome_message_en" rows={12} dir="ltr" value={welcome.welcome_message_en}
+              onChange={(e) => setWelcome((w) => ({ ...w, welcome_message_en: e.target.value }))} />
             {welcomeMsg && <div className={`status-box ${welcomeMsg.type}`} style={{ marginTop: 12 }}>{welcomeMsg.text}</div>}
             <div className="button-row">
               <button type="submit" className="btn btn-gold" disabled={savingWelcome}>

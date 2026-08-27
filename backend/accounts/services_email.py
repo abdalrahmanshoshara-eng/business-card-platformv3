@@ -9,12 +9,19 @@ user's email so replies reach them:
     Reply-To: <sender_email>
 
 The ministry logo is embedded inline (CID) so it appears in the email header.
+
+A message is composed of one or more ``WelcomeSection`` blocks — one per
+language printed on the recipient's card. A card printed in Arabic only yields
+one Arabic block; a bilingual card yields Arabic first, then the card's other
+language, in a single email. See ``cards/services/welcome_text.py`` for how the
+blocks are built.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from email.mime.image import MIMEImage
 from email.utils import formataddr
 from functools import lru_cache
@@ -24,6 +31,8 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.utils.html import escape
 
+from .welcome_templates import BODY_AR, BODY_EN, SUBJECT_AR, SUBJECT_EN
+
 logger = logging.getLogger(__name__)
 
 # Ministry logo bundled with the backend so it can be embedded inline (CID) —
@@ -32,17 +41,27 @@ _LOGO_PATH = Path(__file__).resolve().parent / 'assets' / 'welcome-logo.png'
 _LOGO_CID = 'welcomelogo'
 
 # Default welcome content, used when the user hasn't customised it in their
-# profile. They can override both in the profile form.
-DEFAULT_WELCOME_SUBJECT = 'ترحيب من وزارة الاقتصاد والصناعة'
-DEFAULT_WELCOME_MESSAGE = (
-    'وزارة الاقتصاد والصناعة في الجمهورية العربية السورية ترحّب بكم، '
-    'وتشكركم على اللقاء الطيّب. يسعدنا أن نكون على تواصل معكم، '
-    'ونتطلّع إلى تعاونٍ مثمر يخدم مصالحنا المشتركة.'
-)
+# profile. They can override both languages in the profile form. The Arabic
+# names stay unsuffixed because they are the platform's primary language and are
+# imported elsewhere under these names.
+DEFAULT_WELCOME_SUBJECT = SUBJECT_AR
+DEFAULT_WELCOME_MESSAGE = BODY_AR
+DEFAULT_WELCOME_SUBJECT_EN = SUBJECT_EN
+DEFAULT_WELCOME_MESSAGE_EN = BODY_EN
 
 
 class WelcomeEmailError(RuntimeError):
     """Raised when a welcome email cannot be sent. ``message`` is user-safe."""
+
+
+@dataclass(frozen=True)
+class WelcomeSection:
+    """One language block of a welcome email."""
+
+    subject: str
+    body: str
+    language: str = 'ar'
+    rtl: bool = True
 
 
 def _sanitize(text: str) -> str:
@@ -58,11 +77,33 @@ def _logo_bytes() -> bytes:
         return b''
 
 
-def _welcome_html(body: str, sender_email: str, has_logo: bool) -> str:
-    """A polished, RTL HTML body carrying the platform's visual identity: a green
+def combine_subjects(sections: list[WelcomeSection]) -> str:
+    """Email subject for a multi-language message: each block's subject once,
+    in order, joined by a separator (e.g. "رسالة شكر وتقدير | Message of
+    Appreciation")."""
+    subjects = [s.subject.strip() for s in sections if s.subject.strip()]
+    return ' | '.join(dict.fromkeys(subjects))
+
+
+def combine_bodies(sections: list[WelcomeSection]) -> str:
+    """Plain-text fallback: the blocks in order, separated by a rule. A single
+    block is returned untouched so a one-language message is byte-identical to
+    the text the user wrote."""
+    bodies = [s.body.strip() for s in sections if s.body.strip()]
+    if len(bodies) <= 1:
+        return bodies[0] if bodies else ''
+    return '\n\n\n'.join(bodies)
+
+
+def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: bool) -> str:
+    """A polished HTML body carrying the platform's visual identity: a green
     header bar with the ministry logo and a gold rule, so the message reads as
-    coming from the ministry, while still framing the user as the sender."""
-    safe_body = escape(body).replace('\n', '<br>')
+    coming from the ministry, while still framing the user as the sender.
+
+    Each section is rendered in its own direction, so an Arabic block stays RTL
+    while an English/German block beside it reads LTR."""
+    primary = sections[0] if sections else WelcomeSection(subject='', body='')
+    has_latin = any(not s.rtl for s in sections)
     initial = escape((sender_email[:1] or '?').upper())
     sender = escape(sender_email)
 
@@ -78,8 +119,31 @@ def _welcome_html(body: str, sender_email: str, has_logo: bool) -> str:
             'MINISTRY OF ECONOMY AND INDUSTRY</div>'
         )
 
+    blocks = []
+    for index, section in enumerate(sections):
+        direction = 'rtl' if section.rtl else 'ltr'
+        align = 'right' if section.rtl else 'left'
+        safe_body = escape(section.body).replace('\n', '<br>')
+        title = escape(section.subject.strip())
+        rule = (
+            '<div style="height:1px;background:#e6ded0;margin:26px 0"></div>'
+            if index else ''
+        )
+        heading = (
+            f'<div style="font-size:18px;font-weight:800;color:#0f5a4e;margin-bottom:14px">{title}</div>'
+            if title else ''
+        )
+        blocks.append(
+            f'{rule}<div dir="{direction}" lang="{escape(section.language)}" style="text-align:{align}">'
+            f'{heading}'
+            f'<div style="font-size:16px;line-height:2;color:#2c2a26">{safe_body}</div>'
+            '</div>'
+        )
+    body_html = ''.join(blocks)
+
     sender_block = ''
     if sender:
+        label = 'مُرسَلة من' + (' · Sent by' if has_latin else '')
         sender_block = f"""
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;border-top:1px solid #e6ded0;padding-top:18px">
             <tr>
@@ -87,14 +151,26 @@ def _welcome_html(body: str, sender_email: str, has_logo: bool) -> str:
                 <div style="width:44px;height:44px;border-radius:50%;background:#0f5a4e;color:#f4e9cf;font-weight:800;font-size:18px;text-align:center;line-height:44px">{initial}</div>
               </td>
               <td style="vertical-align:middle;padding-inline-start:12px">
-                <div style="font-size:13px;color:#6b6252">مُرسَلة من</div>
+                <div style="font-size:13px;color:#6b6252">{label}</div>
                 <div style="font-size:15px;font-weight:800;color:#0f5a4e;direction:ltr;text-align:right">{sender}</div>
               </td>
             </tr>
           </table>"""
 
+    footer = 'الجمهورية العربية السورية · وزارة الاقتصاد والصناعة'
+    if has_latin:
+        footer += (
+            '<div style="margin-top:4px">Syrian Arab Republic · '
+            'Ministry of Economy and Industry</div>'
+        )
+    note = 'هذه الرسالة موجّهة إليك شخصياً. يمكنك الردّ عليها مباشرةً للوصول إلى المُرسِل.'
+    if has_latin:
+        note += '<br>This message is addressed to you personally. Reply directly to reach the sender.'
+
+    root_dir = 'rtl' if primary.rtl else 'ltr'
+    root_lang = escape(primary.language or 'ar')
     return f"""<!DOCTYPE html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<html lang="{root_lang}" dir="{root_dir}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f3efe6;font-family:'Segoe UI',Tahoma,Arial,sans-serif">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3efe6;padding:28px 12px">
@@ -103,32 +179,54 @@ def _welcome_html(body: str, sender_email: str, has_logo: bool) -> str:
         <tr><td style="background:linear-gradient(160deg,#0b4a40,#063029);padding:24px 24px 20px;text-align:center">{brand}</td></tr>
         <tr><td style="height:4px;background:linear-gradient(90deg,#0f5a4e,#c7a66b)"></td></tr>
         <tr><td style="padding:32px 30px 26px">
-          <div style="font-size:19px;font-weight:800;color:#0f5a4e;margin-bottom:14px">مرحباً 👋</div>
-          <div style="font-size:16px;line-height:2;color:#2c2a26">{safe_body}</div>
+          {body_html}
           {sender_block}
         </td></tr>
         <tr><td style="background:#f7f4ec;padding:14px 24px;text-align:center;font-size:12px;color:#8a8272;border-top:1px solid #ece5d6">
-          الجمهورية العربية السورية · وزارة الاقتصاد والصناعة
+          {footer}
         </td></tr>
       </table>
-      <div style="max-width:560px;margin-top:14px;font-size:12px;color:#9a9284">هذه الرسالة موجّهة إليك شخصياً. يمكنك الردّ عليها مباشرةً للوصول إلى المُرسِل.</div>
+      <div style="max-width:560px;margin-top:14px;font-size:12px;color:#9a9284">{note}</div>
     </td></tr>
   </table>
 </body></html>"""
 
 
-def send_welcome_email(profile, *, to_email: str, subject: str, body: str) -> None:
-    """Send ``body`` to ``to_email`` from the single platform address, showing
+def send_welcome_email(
+    profile,
+    *,
+    to_email: str,
+    subject: str = '',
+    body: str = '',
+    sections: list[WelcomeSection] | None = None,
+) -> None:
+    """Send the message to ``to_email`` from the single platform address, showing
     the profile owner's email as From display name + Reply-To, with the ministry
-    logo embedded inline. Raises WelcomeEmailError on failure (user-safe)."""
+    logo embedded inline. Raises WelcomeEmailError on failure (user-safe).
+
+    Pass either ``sections`` (one block per language) or a single
+    ``subject``/``body`` pair, which is treated as one Arabic block.
+    """
     platform_from = (getattr(settings, 'WELCOME_FROM_EMAIL', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')).strip()
     if not platform_from:
         raise WelcomeEmailError('لم يتم ضبط بريد إرسال المنصة (WELCOME_FROM_EMAIL) في إعدادات الخادم.')
     if not to_email:
         raise WelcomeEmailError('لا يوجد بريد مستلم صالح.')
-    # Fall back to the default content when the profile leaves them blank.
-    subject = (subject or '').strip() or DEFAULT_WELCOME_SUBJECT
-    body = (body or '').strip() or DEFAULT_WELCOME_MESSAGE
+
+    if sections is None:
+        # Fall back to the default content when the caller leaves them blank.
+        sections = [WelcomeSection(
+            subject=(subject or '').strip() or DEFAULT_WELCOME_SUBJECT,
+            body=(body or '').strip() or DEFAULT_WELCOME_MESSAGE,
+            language='ar',
+            rtl=True,
+        )]
+    sections = [s for s in sections if s.body.strip()]
+    if not sections:
+        raise WelcomeEmailError('لا يوجد نص لرسالة الترحيب.')
+
+    mail_subject = combine_subjects(sections) or DEFAULT_WELCOME_SUBJECT
+    mail_body = combine_bodies(sections)
 
     user_email = (getattr(profile, 'sender_email', '') or '').strip()
     # formataddr quotes the display name so an email-like name (contains '@') is
@@ -137,14 +235,14 @@ def send_welcome_email(profile, *, to_email: str, subject: str, body: str) -> No
     logo = _logo_bytes()
     try:
         message = EmailMultiAlternatives(
-            subject=subject,
-            body=body,  # plain-text fallback = the user's message as-is
+            subject=mail_subject,
+            body=mail_body,  # plain-text fallback = the message as-is
             from_email=from_email,
             to=[to_email],
             reply_to=[user_email] if user_email else None,
             connection=get_connection(),  # platform default (EMAIL_* settings)
         )
-        message.attach_alternative(_welcome_html(body, user_email, bool(logo)), 'text/html')
+        message.attach_alternative(_welcome_html(sections, user_email, bool(logo)), 'text/html')
         if logo:
             image = MIMEImage(logo)
             image.add_header('Content-ID', f'<{_LOGO_CID}>')

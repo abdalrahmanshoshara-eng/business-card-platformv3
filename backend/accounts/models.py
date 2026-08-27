@@ -27,6 +27,11 @@ class Profile(models.Model):
     smtp_password_encrypted = models.TextField(blank=True)
     welcome_subject = models.CharField(max_length=255, blank=True)
     welcome_message = models.TextField(blank=True)
+    # The secondary-language letter, sent alongside the Arabic one when the
+    # recipient's card is not Arabic. Blank means "use the reviewed template for
+    # whatever language that card is printed in".
+    welcome_subject_en = models.CharField(max_length=255, blank=True)
+    welcome_message_en = models.TextField(blank=True)
 
     def has_welcome_config(self) -> bool:
         """True when the user can send a welcome email — i.e. they set a sender

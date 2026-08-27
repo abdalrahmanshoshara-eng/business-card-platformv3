@@ -38,6 +38,19 @@ class BusinessCard(models.Model):
     investment_type = models.CharField(max_length=255, blank=True, db_index=True)
     investment_type_other = models.CharField(max_length=255, blank=True)
     raw_text = models.TextField(blank=True)
+    # Languages actually PRINTED on the card (ISO 639-1 codes, e.g. ["ar", "en"]
+    # or ["de"]). Filled by the extractor; drives which language(s) the welcome
+    # email is written in. Empty on legacy cards → detected from the text.
+    printed_languages = models.JSONField(default=list, blank=True)
+    # Salutation lines tailored to this card ("معالي الوزير ...", "السادة في
+    # شركة ... الكرام"). Filled by the extractor; a rule-based fallback covers
+    # legacy cards. Used to open the welcome email.
+    salutation_ar = models.CharField(max_length=255, blank=True)
+    salutation_en = models.CharField(max_length=255, blank=True)
+    # The same salutation in the card's own printed language, when that language
+    # is neither Arabic nor English (e.g. German). Lets a German card be greeted
+    # in German without translating a person's name at send time.
+    salutation_native = models.CharField(max_length=255, blank=True)
     confidence = models.FloatField(default=0.0)
     needs_review = models.BooleanField(default=True, db_index=True)
     review_notes = models.TextField(blank=True)
@@ -306,3 +319,27 @@ class CompanyDomainEnrichment(models.Model):
 
     def __str__(self):
         return f'{self.canonical_domain} [{self.status}]'
+
+
+class WelcomeTranslation(models.Model):
+    """Cache of one welcome-letter translation.
+
+    The default letter is static, so a language is translated at most once ever
+    and every later send reads it straight from the DB — no Gemini call, no
+    latency. Keyed by (language, source_hash) so editing the source text
+    naturally produces a new row instead of serving a stale translation.
+    """
+
+    language = models.CharField(max_length=16, db_index=True)
+    source_hash = models.CharField(max_length=64, db_index=True)
+    subject = models.CharField(max_length=255, blank=True)
+    body = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['language', 'source_hash'], name='uniq_welcome_translation'),
+        ]
+
+    def __str__(self):
+        return f'{self.language} [{self.source_hash[:8]}]'

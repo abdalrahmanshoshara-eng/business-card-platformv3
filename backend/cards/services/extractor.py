@@ -65,6 +65,10 @@ class BusinessCardData(BaseModel):
     review_notes: str = ''
     review_fields: list[str] = Field(default_factory=list)
     website_visit_note: str = ''
+    printed_languages: list[str] = Field(default_factory=list)
+    salutation_ar: str = ''
+    salutation_en: str = ''
+    salutation_native: str = ''
 
 
 @dataclass
@@ -131,6 +135,28 @@ Rules:
   add that field name to review_fields.
 - Set needs_review=true and populate review_fields when a field is uncertain,
   conflicting, or likely incomplete.
+- printed_languages: ISO 639-1 codes of the languages ACTUALLY PRINTED on the
+  card, most prominent first — e.g. ["ar"], ["en"], ["ar","en"], ["de"],
+  ["fr","ar"]. When the two sides carry different languages, list BOTH. Judge by
+  what is printed, not by the country. Never invent a language you cannot see.
+- salutation_ar / salutation_en: the opening salutation line of a FORMAL letter
+  of appreciation addressed to this card's holder, in Arabic and in English.
+    • Match the addressee: a named person → address the person; a company,
+      chamber, embassy, or ministry with no personal name → address the body.
+    • Honour rank and titles printed on the card: minister/ambassador/CEO →
+      "معالي الوزير" / "سعادة السفير" / "حضرة السيد المدير العام"; academic or
+      engineering titles ("د."، "م."، "Dr.", "Eng.") must be kept.
+    • Infer grammatical gender from the person's name for the Arabic form
+      (السيد/السيدة، المحترم/المحترمة). When the name is genuinely ambiguous,
+      address the organisation instead, or use a neutral plural form.
+    • One line only, ending with a comma. No greeting words, no body text.
+      e.g. "حضرة السيد أحمد الخالد المحترم،" / "Dear Mr. Ahmad Al-Khaled,"
+      e.g. "السادة في شركة النور للتجارة الكرام،" / "Dear NOUR Trading Company,"
+    • Leave both empty when the card carries no usable name at all.
+    • salutation_native: the SAME salutation written in the card's own printed
+      language, but ONLY when that language is neither Arabic nor English
+      (e.g. "Sehr geehrter Herr Dr. Weber," for a German card). Leave it empty
+      for Arabic-only, English-only, and Arabic+English cards.
 """
 
 STRING_FIELDS = {
@@ -139,9 +165,12 @@ STRING_FIELDS = {
     'company_name', 'company_name_ar', 'company_name_en',
     'website', 'address', 'company_activity', 'investment_type',
     'investment_type_other', 'raw_text', 'review_notes', 'website_visit_note',
+    'salutation_ar', 'salutation_en', 'salutation_native',
 }
-LIST_FIELDS = {'mobile_numbers', 'emails', 'review_fields'}
-ALLOWED_REVIEW_FIELDS = STRING_FIELDS | {'mobile_numbers', 'emails'}
+LIST_FIELDS = {'mobile_numbers', 'emails', 'review_fields', 'printed_languages'}
+# Salutations are generated text, not extracted data the reviewer can fix in the
+# edit form, so they must never appear in review_fields.
+ALLOWED_REVIEW_FIELDS = (STRING_FIELDS - {'salutation_ar', 'salutation_en', 'salutation_native'}) | {'mobile_numbers', 'emails'}
 EMAIL_RE = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+', re.I)
 URL_RE = re.compile(r'(?<!@)\b(?:https?://)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:/[^\s]*)?', re.I)
 PHONE_RE = re.compile(r'(?:\+?\d[\d\s().-]{6,}\d)')
@@ -201,6 +230,15 @@ def _sanitize_extracted_payload(payload: dict) -> dict:
     sanitized['confidence'] = max(0.0, min(1.0, sanitized['confidence']))
     sanitized['needs_review'] = bool(sanitized.get('needs_review', True))
     sanitized['raw_text'] = sanitized['raw_text'][:2000]
+    # Language codes: lowercase ISO 639-1 only, de-duplicated, order preserved.
+    codes = []
+    for item in sanitized['printed_languages']:
+        code = re.sub(r'[^a-z]', '', str(item).lower())[:2]
+        if len(code) == 2 and code not in codes:
+            codes.append(code)
+    sanitized['printed_languages'] = codes[:4]
+    for field_name in ('salutation_ar', 'salutation_en', 'salutation_native'):
+        sanitized[field_name] = re.sub(r'\s+', ' ', sanitized[field_name])[:255]
     # Drop any unexpected keys so a hallucinated field never reaches the model.
     return {k: v for k, v in sanitized.items() if k in BusinessCardData.model_fields}
 

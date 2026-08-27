@@ -6,14 +6,23 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import Profile
-from .services_email import DEFAULT_WELCOME_MESSAGE, DEFAULT_WELCOME_SUBJECT
+from .services_email import (
+    DEFAULT_WELCOME_MESSAGE,
+    DEFAULT_WELCOME_MESSAGE_EN,
+    DEFAULT_WELCOME_SUBJECT,
+    DEFAULT_WELCOME_SUBJECT_EN,
+)
 
 User = get_user_model()
 
 # Welcome-email config fields editable via the profile (kept intentionally
-# minimal: sender email, subject, message). The actual From account is a single
-# platform email in settings, not per user.
-WELCOME_CONFIG_FIELDS = ('sender_email', 'welcome_subject', 'welcome_message')
+# minimal: sender email, then a subject + message per language). The actual From
+# account is a single platform email in settings, not per user.
+WELCOME_CONFIG_FIELDS = (
+    'sender_email',
+    'welcome_subject', 'welcome_message',
+    'welcome_subject_en', 'welcome_message_en',
+)
 
 
 def get_welcome_config(user) -> dict:
@@ -23,6 +32,8 @@ def get_welcome_config(user) -> dict:
             'sender_email': '',
             'welcome_subject': DEFAULT_WELCOME_SUBJECT,
             'welcome_message': DEFAULT_WELCOME_MESSAGE,
+            'welcome_subject_en': DEFAULT_WELCOME_SUBJECT_EN,
+            'welcome_message_en': DEFAULT_WELCOME_MESSAGE_EN,
             'configured': False,
         }
     return {
@@ -30,6 +41,8 @@ def get_welcome_config(user) -> dict:
         # Surface the effective content, defaulting when the user left it blank.
         'welcome_subject': profile.welcome_subject or DEFAULT_WELCOME_SUBJECT,
         'welcome_message': profile.welcome_message or DEFAULT_WELCOME_MESSAGE,
+        'welcome_subject_en': profile.welcome_subject_en or DEFAULT_WELCOME_SUBJECT_EN,
+        'welcome_message_en': profile.welcome_message_en or DEFAULT_WELCOME_MESSAGE_EN,
         'configured': profile.has_welcome_config(),
     }
 
@@ -151,12 +164,15 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
     sender_email = serializers.EmailField(required=False, allow_blank=True)
     welcome_subject = serializers.CharField(required=False, allow_blank=True, max_length=255)
     welcome_message = serializers.CharField(required=False, allow_blank=True)
+    welcome_subject_en = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    welcome_message_en = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = [
             'first_name', 'last_name', 'email', 'phone',
             'sender_email', 'welcome_subject', 'welcome_message',
+            'welcome_subject_en', 'welcome_message_en',
         ]
 
     def validate_email(self, value):
