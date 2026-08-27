@@ -90,6 +90,11 @@ export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name'
   });
 }
 
+/** The platform-wide welcome letter, plus whether this user may edit it. */
+export async function fetchWelcomeLetter(): Promise<WelcomeEmailConfig> {
+  return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter');
+}
+
 /** Admin-only: change the platform-wide welcome letter. */
 export async function updateWelcomeLetter(payload: WelcomeLetterUpdate): Promise<WelcomeEmailConfig> {
   await ensureCsrf();
