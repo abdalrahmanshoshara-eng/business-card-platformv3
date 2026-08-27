@@ -249,9 +249,11 @@ function ProfileInner() {
             تُرسَل الرسالة بلغة الكرت: كرت عربي يستلم النصّ العربي وحده، وكرت بلغة أخرى يستلم
             النصّ العربي والنصّ بلغته في بريد واحد، وتبدأ بتحية مناسبة لصاحب الكرت.
             <code style={{ margin: '0 4px' }}>{SALUTATION_TOKEN}</code>
-            هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال النصّ كما هو دون تحية.
+            {canEditLetter
+              ? ' هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال النصّ كما هو دون تحية.'
+              : ' هو موضع تلك التحية، ويُستبدل بها تلقائيًا عند الإرسال حسب صاحب الكرت.'}
           </p>
-          <form onSubmit={saveLetter}>
+          <form onSubmit={canEditLetter ? saveLetter : (e) => e.preventDefault()}>
             <label htmlFor="welcome_subject">عنوان الرسالة (عربي)</label>
             <input id="welcome_subject" type="text" value={letter.welcome_subject}
               readOnly={!canEditLetter} disabled={!canEditLetter}
