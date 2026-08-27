@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from .models import WelcomeLetter
 from .permissions import IsAdmin
 from .serializers import (
     AdminUserCreateSerializer,
@@ -25,9 +26,13 @@ from .serializers import (
     ProfileUpdateSerializer,
     RegisterSerializer,
     UserSerializer,
+    WelcomeLetterSerializer,
+    effective_letter,
+    get_welcome_config,
 )
 from .services import build_reset_link, send_reset_email
 from .services_email import WelcomeEmailError, send_welcome_email
+from .welcome_templates import SALUTATION_TOKEN, default_salutation
 
 User = get_user_model()
 
@@ -120,10 +125,52 @@ class ProfileView(APIView):
         return Response(UserSerializer(request.user).data)
 
 
+class WelcomeLetterView(APIView):
+    """The platform-wide welcome letter.
+
+    Readable by any signed-in user — it goes out in their name, so they get to
+    see it — but writable only by admins, because it is official ministry
+    correspondence signed by the Deputy Minister rather than personal mail.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method in ('PATCH', 'PUT', 'POST'):
+            return [IsAuthenticated(), IsAdmin()]
+        return super().get_permissions()
+
+    def get(self, request):
+        return Response(get_welcome_config(request.user))
+
+    def patch(self, request):
+        serializer = WelcomeLetterSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(by=request.user)
+        return Response(get_welcome_config(request.user))
+
+
+class WelcomeLetterResetView(APIView):
+    """Restore the shipped default letter for the whole platform.
+
+    Clears the stored text rather than copying the template into it, so the
+    letter keeps tracking the reviewed default in welcome_templates.py.
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    def post(self, request):
+        WelcomeLetter.load().reset(by=request.user)
+        payload = get_welcome_config(request.user)
+        payload['detail'] = 'تمت إعادة رسالة الترحيب إلى النص الرسمي الافتراضي.'
+        return Response(payload)
+
+
 class WelcomeTestView(APIView):
     """Send a one-off test email to an arbitrary address to verify the platform
-    mail configuration. Admin-only. Uses the user's welcome subject/message when
-    set, else a default test body."""
+    mail configuration. Admin-only. Sends the real platform letter, so the admin
+    sees exactly what recipients get, with a generic salutation standing in for
+    the per-card one."""
 
     permission_classes = [IsAdmin]
     throttle_classes = [ScopedRateThrottle]
@@ -140,8 +187,10 @@ class WelcomeTestView(APIView):
             return Response({'detail': 'يرجى إدخال بريد إلكتروني صالح.', 'error_type': 'invalid_email'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = getattr(request.user, 'profile', None)
-        subject = (getattr(profile, 'welcome_subject', '') or '').strip() or 'رسالة اختبار'
-        body = (getattr(profile, 'welcome_message', '') or '').strip() or 'هذه رسالة اختبار من منصة البطاقات للتأكد من إعدادات البريد.'
+        letter = effective_letter()
+        subject = letter['welcome_subject']
+        # No card here, so the placeholder becomes the generic wording.
+        body = letter['welcome_message'].replace(SALUTATION_TOKEN, default_salutation('ar'))
         try:
             send_welcome_email(profile, to_email=to_email, subject=subject, body=body)
         except WelcomeEmailError as exc:

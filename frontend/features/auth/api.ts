@@ -1,15 +1,27 @@
 import { fetchJson, ensureCsrf } from '@/lib/api';
 
 export type WelcomeEmailConfig = {
+  // The only welcome setting a user owns.
   sender_email: string;
-  // Arabic letter (primary) and the secondary-language letter, sent side by
-  // side when the recipient's card is not Arabic.
+  configured: boolean;
+  // The platform-wide letter: Arabic (primary) plus the secondary-language
+  // letter, sent side by side when the recipient's card is not Arabic. Same for
+  // every account — only an admin may change it.
   welcome_subject: string;
   welcome_message: string;
   welcome_subject_en: string;
   welcome_message_en: string;
-  configured: boolean;
+  is_customized: boolean;
+  can_edit_letter: boolean;
 };
+
+// The letter fields, editable by admins through the welcome-letter endpoint.
+export type WelcomeLetterUpdate = Partial<{
+  welcome_subject: string;
+  welcome_message: string;
+  welcome_subject_en: string;
+  welcome_message_en: string;
+}>;
 
 export type AuthUser = {
   id: number;
@@ -26,13 +38,9 @@ export type AuthUser = {
   welcome_email?: WelcomeEmailConfig;
 };
 
-// Fields accepted when saving the welcome-email config.
+// Fields accepted when saving the welcome-email config on a profile.
 export type WelcomeEmailUpdate = Partial<{
   sender_email: string;
-  welcome_subject: string;
-  welcome_message: string;
-  welcome_subject_en: string;
-  welcome_message_en: string;
 }>;
 
 export function isAdmin(user: AuthUser | null): boolean {
@@ -79,6 +87,25 @@ export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name'
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  });
+}
+
+/** Admin-only: change the platform-wide welcome letter. */
+export async function updateWelcomeLetter(payload: WelcomeLetterUpdate): Promise<WelcomeEmailConfig> {
+  await ensureCsrf();
+  return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Admin-only: restore the official default letter for every account. */
+export async function resetWelcomeLetter(): Promise<WelcomeEmailConfig> {
+  await ensureCsrf();
+  return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 

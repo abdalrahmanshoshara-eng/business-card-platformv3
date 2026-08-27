@@ -675,18 +675,16 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
 
         # One block per language the card is printed in (Arabic always first),
         # each opened with a salutation tailored to this card's holder. Should
-        # composing them fail for any reason, fall back to the single-block
-        # behaviour rather than turning a send into a 500.
+        # composing them fail for any reason, sections=None falls back to a
+        # single Arabic block carrying the default letter, rather than turning a
+        # send into a 500.
         try:
-            sections = build_welcome_sections(card, profile)
+            sections = build_welcome_sections(card)
         except Exception:
             logger.exception('welcome_sections_failed card_id=%s', card.id)
             sections = None
         try:
-            send_welcome_email(
-                profile, to_email=to_email, sections=sections,
-                subject=profile.welcome_subject, body=profile.welcome_message,
-            )
+            send_welcome_email(profile, to_email=to_email, sections=sections)
         except WelcomeEmailError as exc:
             card.welcome_status = BusinessCard.WELCOME_FAILED
             card.welcome_sent_to = to_email

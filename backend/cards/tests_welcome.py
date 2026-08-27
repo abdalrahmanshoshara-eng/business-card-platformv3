@@ -10,7 +10,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from accounts.models import Profile
+from accounts.models import Profile, WelcomeLetter
 from .models import BusinessCard
 from .services.card_data import prepare_card_data
 
@@ -35,38 +35,56 @@ def make_card(owner, emails, **overrides):
 
 
 def configure_profile(user, **overrides):
-    defaults = {
-        'sender_email': 'sender@example.com',
-        'welcome_subject': 'أهلاً',
-        'welcome_message': 'مرحبًا بك',
-    }
+    """Give the user the one welcome setting they own: a sender email."""
+    defaults = {'sender_email': 'sender@example.com'}
     defaults.update(overrides)
     Profile.objects.update_or_create(user=user, defaults=defaults)
 
 
+def set_platform_letter(**fields):
+    """Set the platform-wide letter an admin would configure. Any field left out
+    stays blank, i.e. falls back to the reviewed default for that language."""
+    letter = WelcomeLetter.load()
+    for name, value in fields.items():
+        setattr(letter, name, value)
+    letter.save()
+    return letter
+
+
+def make_admin(username):
+    return User.objects.create_user(
+        username=username, password='StrongPass!234', email=f'{username}@x.com', is_staff=True,
+    )
+
+
 class ProfileConfigApiTests(TestCase):
-    def test_saves_three_fields(self):
+    """A regular user owns exactly one welcome setting: the sender email."""
+
+    def test_saves_sender_email(self):
         user = make_user('alice')
-        client = auth_client(user)
-        resp = client.patch('/api/auth/profile', {
-            'sender_email': 'alice@example.com',
-            'welcome_subject': 'ترحيب',
-            'welcome_message': 'أهلاً وسهلاً',
-        }, format='json')
+        resp = auth_client(user).patch(
+            '/api/auth/profile', {'sender_email': 'alice@example.com'}, format='json',
+        )
         self.assertEqual(resp.status_code, 200, resp.data)
         cfg = resp.data['welcome_email']
         self.assertEqual(cfg['sender_email'], 'alice@example.com')
-        self.assertEqual(cfg['welcome_subject'], 'ترحيب')
-        self.assertEqual(cfg['welcome_message'], 'أهلاً وسهلاً')
         self.assertTrue(cfg['configured'])
-        profile = Profile.objects.get(user=user)
-        self.assertEqual(profile.sender_email, 'alice@example.com')
+        self.assertEqual(Profile.objects.get(user=user).sender_email, 'alice@example.com')
 
-    def test_not_configured_until_email_and_message_set(self):
+    def test_not_configured_until_sender_email_set(self):
         user = make_user('bob')
-        client = auth_client(user)
-        resp = client.patch('/api/auth/profile', {'welcome_subject': 'x'}, format='json')
+        resp = auth_client(user).patch('/api/auth/profile', {'phone': '0900'}, format='json')
         self.assertFalse(resp.data['welcome_email']['configured'])
+
+    def test_profile_endpoint_refuses_letter_fields(self):
+        # Rejected outright rather than ignored, so a stale client never believes
+        # it changed the official wording.
+        resp = auth_client(make_user('carla')).patch(
+            '/api/auth/profile', {'welcome_message': 'نصّي أنا'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('welcome_message', resp.data)
+        self.assertFalse(WelcomeLetter.load().is_customized)
 
 
 @override_settings(WELCOME_FROM_EMAIL='platform@site.com')
@@ -74,6 +92,7 @@ class SendWelcomeApiTests(TestCase):
     def setUp(self):
         self.user = make_user('carol')
         configure_profile(self.user)
+        set_platform_letter(subject_ar='أهلاً', body_ar='مرحبًا بك')
         self.client = auth_client(self.user)
         self.card = make_card(self.user, ['recipient@corp.com'], printed_languages=['ar'])
 
@@ -89,7 +108,7 @@ class SendWelcomeApiTests(TestCase):
         self.assertIn('platform@site.com', msg.from_email)
         self.assertIn('sender@example.com', msg.from_email)
         self.assertEqual(msg.reply_to, ['sender@example.com'])
-        # Arabic-only card → one Arabic block, sent exactly as the owner wrote it.
+        # Arabic-only card → one Arabic block, sent exactly as the admin wrote it.
         self.assertEqual(msg.subject, 'أهلاً')
         self.assertEqual(msg.body, 'مرحبًا بك')
         # A styled HTML alternative is attached and frames the user's email as sender.
@@ -143,7 +162,7 @@ class SendWelcomeApiTests(TestCase):
 
     def test_welcome_test_endpoint_sends_to_arbitrary_email(self):
         # The test-send endpoint is admin-only.
-        admin = User.objects.create_user(username='admin_send', password='x', is_staff=True)
+        admin = make_admin('admin_send')
         configure_profile(admin)
         resp = auth_client(admin).post('/api/auth/welcome-test', {'to': 'me@test.com'}, format='json')
         self.assertEqual(resp.status_code, 200, resp.data)
@@ -181,7 +200,9 @@ class WelcomeLanguageTests(TestCase):
 
     def setUp(self):
         self.user = make_user('lang')
-        configure_profile(self.user)  # custom Arabic letter, default secondary
+        configure_profile(self.user)
+        # Custom Arabic letter, secondary language left on the reviewed default.
+        set_platform_letter(subject_ar='أهلاً', body_ar='مرحبًا بك')
         self.client = auth_client(self.user)
 
     def send(self, card):
@@ -254,8 +275,9 @@ class WelcomeSalutationTests(TestCase):
 
     def setUp(self):
         self.user = make_user('salut')
-        # Default letter (blank profile message) so the salutation token applies.
-        configure_profile(self.user, welcome_subject='', welcome_message='')
+        # Platform letter left untouched → the default letter, which carries the
+        # salutation token.
+        configure_profile(self.user)
         self.client = auth_client(self.user)
 
     def send(self, card):
@@ -306,16 +328,43 @@ class WelcomeSalutationTests(TestCase):
         )
         self.assertIn('السادة الضيوف الكرام،', self.send(card).body)
 
-    def test_owner_text_without_the_token_is_sent_verbatim(self):
-        configure_profile(self.user, welcome_subject='خاص', welcome_message='نصّي أنا فقط.')
-        # Re-fetch so the request user does not carry the profile cached in setUp.
-        self.user = User.objects.get(pk=self.user.pk)
-        self.client = auth_client(self.user)
+    def test_letter_without_the_token_is_sent_verbatim(self):
+        set_platform_letter(subject_ar='خاص', body_ar='نصّي أنا فقط.')
         card = make_card(self.user, ['verbatim@corp.com'], printed_languages=['ar'],
                          salutation_ar='حضرة السيد المحترم،')
         msg = self.send(card)
         self.assertEqual(msg.body, 'نصّي أنا فقط.')
         self.assertNotIn('حضرة السيد المحترم،', msg.body)
+
+
+@override_settings(WELCOME_FROM_EMAIL='platform@site.com')
+class SalutationPlaceholderGuardTests(TestCase):
+    """No email may ever go out carrying the raw placeholder."""
+
+    def test_placeholder_is_replaced_even_when_composing_the_blocks_fails(self):
+        user = make_user('guarded')
+        configure_profile(user)
+        card = make_card(user, ['guard@corp.com'], printed_languages=['ar'])
+        with patch(
+            'cards.views.build_welcome_sections', side_effect=RuntimeError('boom'),
+        ):
+            resp = auth_client(user).post(
+                f'/api/cards/{card.id}/send-welcome', {}, format='json',
+            )
+        # The send still succeeds, on the default letter…
+        self.assertEqual(resp.status_code, 200, resp.data)
+        body = mail.outbox[-1].body
+        # …and the placeholder is gone, replaced by the generic wording.
+        self.assertNotIn('{{salutation}}', body)
+        self.assertIn('السادة الضيوف الكرام،', body)
+
+    def test_admin_test_send_contains_no_placeholder(self):
+        admin = make_admin('tester')
+        configure_profile(admin)
+        resp = auth_client(admin).post('/api/auth/welcome-test', {'to': 'me@test.com'}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertNotIn('{{salutation}}', mail.outbox[-1].body)
+        self.assertIn('السادة الضيوف الكرام،', mail.outbox[-1].body)
 
 
 class DefaultWelcomeLetterTests(TestCase):
@@ -333,12 +382,102 @@ class DefaultWelcomeLetterTests(TestCase):
         self.assertIn('{{salutation}}', cfg['welcome_message'])
         self.assertIn('{{salutation}}', cfg['welcome_message_en'])
 
-    def test_secondary_language_letter_is_editable(self):
-        user = make_user('editor')
-        resp = auth_client(user).patch('/api/auth/profile', {
-            'welcome_subject_en': 'Thank you',
-            'welcome_message_en': 'Dear guest,',
-        }, format='json')
+    def test_regular_user_sees_the_letter_read_only(self):
+        resp = auth_client(make_user('viewer')).get('/api/auth/welcome-letter')
         self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data['welcome_email']['welcome_subject_en'], 'Thank you')
-        self.assertEqual(Profile.objects.get(user=user).welcome_message_en, 'Dear guest,')
+        self.assertFalse(resp.data['can_edit_letter'])
+        self.assertIn('نائب وزير الاقتصاد والصناعة', resp.data['welcome_message'])
+
+    def test_admin_sees_that_they_may_edit(self):
+        resp = auth_client(make_admin('boss')).get('/api/auth/welcome-letter')
+        self.assertTrue(resp.data['can_edit_letter'])
+        self.assertFalse(resp.data['is_customized'])
+
+
+@override_settings(WELCOME_FROM_EMAIL='platform@site.com')
+class PlatformLetterPermissionTests(TestCase):
+    """The letter is official correspondence: admins only, and platform-wide."""
+
+    def test_regular_user_cannot_edit_the_letter(self):
+        resp = auth_client(make_user('grunt')).patch(
+            '/api/auth/welcome-letter', {'welcome_message': 'نصّي أنا'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(WelcomeLetter.load().is_customized)
+
+    def test_admin_edit_applies_to_every_account(self):
+        admin = make_admin('chief')
+        resp = auth_client(admin).patch(
+            '/api/auth/welcome-letter',
+            {'welcome_subject': 'شكر رسمي', 'welcome_message': 'نصّ الوزارة الموحّد.'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertTrue(resp.data['is_customized'])
+
+        # A DIFFERENT, non-admin user sends and gets the admin's wording.
+        other = make_user('clerk')
+        configure_profile(other)
+        card = make_card(other, ['someone@corp.com'], printed_languages=['ar'])
+        send = auth_client(other).post(f'/api/cards/{card.id}/send-welcome', {}, format='json')
+        self.assertEqual(send.status_code, 200, send.data)
+        self.assertEqual(mail.outbox[-1].subject, 'شكر رسمي')
+        self.assertEqual(mail.outbox[-1].body, 'نصّ الوزارة الموحّد.')
+
+    def test_admin_records_who_changed_it(self):
+        admin = make_admin('scribe')
+        auth_client(admin).patch(
+            '/api/auth/welcome-letter', {'welcome_message': 'نصّ'}, format='json',
+        )
+        self.assertEqual(WelcomeLetter.load().updated_by_id, admin.id)
+
+
+@override_settings(WELCOME_FROM_EMAIL='platform@site.com')
+class ResetWelcomeLetterTests(TestCase):
+    """The reset button restores the shipped official letter for everyone."""
+
+    def setUp(self):
+        self.admin = make_admin('resetter')
+        set_platform_letter(
+            subject_ar='نصّ مؤقت', body_ar='نصّ مؤقت للعرض.',
+            subject_en='Temporary', body_en='Temporary body.',
+        )
+
+    def test_reset_restores_the_default_letter(self):
+        resp = auth_client(self.admin).post('/api/auth/welcome-letter/reset', {}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(resp.data['is_customized'])
+        self.assertEqual(resp.data['welcome_subject'], 'رسالة شكر وتقدير')
+        self.assertIn('نائب وزير الاقتصاد والصناعة', resp.data['welcome_message'])
+        self.assertEqual(resp.data['welcome_subject_en'], 'Message of Appreciation')
+
+    def test_reset_clears_the_stored_text_rather_than_copying_the_template(self):
+        # Clearing keeps the letter tracking the shipped default, so a future
+        # correction to the template reaches everyone without another reset.
+        auth_client(self.admin).post('/api/auth/welcome-letter/reset', {}, format='json')
+        letter = WelcomeLetter.load()
+        self.assertEqual(letter.body_ar, '')
+        self.assertEqual(letter.body_en, '')
+
+    def test_reset_then_send_uses_the_official_letter(self):
+        auth_client(self.admin).post('/api/auth/welcome-letter/reset', {}, format='json')
+        user = make_user('sender_after_reset')
+        configure_profile(user)
+        card = make_card(user, ['after@corp.com'], printed_languages=['ar'])
+        auth_client(user).post(f'/api/cards/{card.id}/send-welcome', {}, format='json')
+        self.assertEqual(mail.outbox[-1].subject, 'رسالة شكر وتقدير')
+        self.assertNotIn('نصّ مؤقت', mail.outbox[-1].body)
+
+    def test_reset_is_idempotent(self):
+        client = auth_client(self.admin)
+        client.post('/api/auth/welcome-letter/reset', {}, format='json')
+        resp = client.post('/api/auth/welcome-letter/reset', {}, format='json')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertFalse(resp.data['is_customized'])
+
+    def test_regular_user_cannot_reset(self):
+        resp = auth_client(make_user('nobody')).post(
+            '/api/auth/welcome-letter/reset', {}, format='json',
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertTrue(WelcomeLetter.load().is_customized)
