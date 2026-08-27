@@ -2,8 +2,12 @@ import { fetchJson, ensureCsrf } from '@/lib/api';
 
 export type WelcomeEmailConfig = {
   sender_email: string;
+  // Arabic letter (primary) and the secondary-language letter, sent side by
+  // side when the recipient's card is not Arabic.
   welcome_subject: string;
   welcome_message: string;
+  welcome_subject_en: string;
+  welcome_message_en: string;
   configured: boolean;
 };
 
@@ -27,6 +31,8 @@ export type WelcomeEmailUpdate = Partial<{
   sender_email: string;
   welcome_subject: string;
   welcome_message: string;
+  welcome_subject_en: string;
+  welcome_message_en: string;
 }>;
 
 export function isAdmin(user: AuthUser | null): boolean {
