@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from email.mime.image import MIMEImage
 from email.utils import formataddr
 from functools import lru_cache
@@ -31,7 +31,14 @@ from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 from django.utils.html import escape
 
-from .welcome_templates import BODY_AR, BODY_EN, SUBJECT_AR, SUBJECT_EN
+from .welcome_templates import (
+    BODY_AR,
+    BODY_EN,
+    SALUTATION_TOKEN,
+    SUBJECT_AR,
+    SUBJECT_EN,
+    default_salutation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +100,19 @@ def combine_bodies(sections: list[WelcomeSection]) -> str:
     if len(bodies) <= 1:
         return bodies[0] if bodies else ''
     return '\n\n\n'.join(bodies)
+
+
+def _without_placeholder(section: WelcomeSection) -> WelcomeSection:
+    """Guarantee no message ever leaves with the raw salutation placeholder in
+    it. Normally ``welcome_text`` has already filled it in from the card; this
+    covers the fallback paths, where there is no card to draw a salutation from
+    and the generic wording is the right answer."""
+    if SALUTATION_TOKEN not in section.body:
+        return section
+    logger.warning('welcome_salutation_placeholder_left language=%s', section.language)
+    return replace(section, body=section.body.replace(
+        SALUTATION_TOKEN, default_salutation(section.language),
+    ))
 
 
 def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: bool) -> str:
@@ -221,7 +241,7 @@ def send_welcome_email(
             language='ar',
             rtl=True,
         )]
-    sections = [s for s in sections if s.body.strip()]
+    sections = [_without_placeholder(s) for s in sections if s.body.strip()]
     if not sections:
         raise WelcomeEmailError('لا يوجد نص لرسالة الترحيب.')
 

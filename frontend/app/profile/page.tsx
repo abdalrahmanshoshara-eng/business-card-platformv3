@@ -6,7 +6,12 @@ import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { RequireAuth } from '@/features/auth/Guard';
 import { useAuth } from '@/features/auth/AuthProvider';
-import { changePassword, updateProfile } from '@/features/auth/api';
+import {
+  changePassword,
+  resetWelcomeLetter,
+  updateProfile,
+  updateWelcomeLetter,
+} from '@/features/auth/api';
 
 // The backend replaces this placeholder with a salutation tailored to each
 // card's holder. Keep it in sync with accounts/welcome_templates.py.
@@ -23,13 +28,21 @@ function ProfileInner() {
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingPwd, setSavingPwd] = useState(false);
 
-  const [welcome, setWelcome] = useState({
-    sender_email: '',
+  // The sender email belongs to this account; the letter is platform-wide and
+  // only an admin may change it, so the two are saved separately.
+  const [welcome, setWelcome] = useState({ sender_email: '' });
+  const [letter, setLetter] = useState({
     welcome_subject: '', welcome_message: '',
     welcome_subject_en: '', welcome_message_en: '',
   });
+  const [canEditLetter, setCanEditLetter] = useState(false);
+  const [letterIsCustom, setLetterIsCustom] = useState(false);
   const [welcomeMsg, setWelcomeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [letterMsg, setLetterMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingWelcome, setSavingWelcome] = useState(false);
+  const [savingLetter, setSavingLetter] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -41,13 +54,15 @@ function ProfileInner() {
       });
       const w = user.welcome_email;
       if (w) {
-        setWelcome({
-          sender_email: w.sender_email || '',
+        setWelcome({ sender_email: w.sender_email || '' });
+        setLetter({
           welcome_subject: w.welcome_subject || '',
           welcome_message: w.welcome_message || '',
           welcome_subject_en: w.welcome_subject_en || '',
           welcome_message_en: w.welcome_message_en || '',
         });
+        setCanEditLetter(!!w.can_edit_letter);
+        setLetterIsCustom(!!w.is_customized);
       }
     }
   }, [user]);
@@ -64,6 +79,42 @@ function ProfileInner() {
       setWelcomeMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'تعذّر حفظ الإعدادات.' });
     } finally {
       setSavingWelcome(false);
+    }
+  }
+
+  async function saveLetter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLetterMsg(null);
+    setSavingLetter(true);
+    try {
+      const cfg = await updateWelcomeLetter(letter);
+      setLetterIsCustom(!!cfg.is_customized);
+      setLetterMsg({ type: 'success', text: 'تم حفظ نصّ الرسالة لكل الحسابات.' });
+    } catch (err) {
+      setLetterMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'تعذّر حفظ النصّ.' });
+    } finally {
+      setSavingLetter(false);
+    }
+  }
+
+  async function doResetLetter() {
+    setLetterMsg(null);
+    setResetting(true);
+    try {
+      const cfg = await resetWelcomeLetter();
+      setLetter({
+        welcome_subject: cfg.welcome_subject || '',
+        welcome_message: cfg.welcome_message || '',
+        welcome_subject_en: cfg.welcome_subject_en || '',
+        welcome_message_en: cfg.welcome_message_en || '',
+      });
+      setLetterIsCustom(!!cfg.is_customized);
+      setConfirmReset(false);
+      setLetterMsg({ type: 'success', text: 'تمت إعادة الرسالة إلى النصّ الرسمي الافتراضي.' });
+    } catch (err) {
+      setLetterMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'تعذّرت إعادة الضبط.' });
+    } finally {
+      setResetting(false);
     }
   }
 
@@ -167,40 +218,84 @@ function ProfileInner() {
           </div>
           <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
             أدخل بريد المُرسِل. تُرسَل الرسالة عبر بريد المنصة ويظهر بريدك كمُرسِل وكعنوان للرد.
-            النصّان أدناه معبّآن بالرسالة الرسمية المعتمدة؛ عدّلهما فقط إذا أردت صياغة خاصة بك،
-            وأي نصّ تتركه كما هو يبقى على الصيغة المعتمدة.
+          </p>
+          <form onSubmit={saveWelcome}>
+            <label htmlFor="sender_email">بريد المُرسِل</label>
+            <input id="sender_email" type="email" dir="ltr" value={welcome.sender_email}
+              onChange={(e) => setWelcome({ sender_email: e.target.value })}
+              placeholder="you@example.com" />
+            {welcomeMsg && <div className={`status-box ${welcomeMsg.type}`} style={{ marginTop: 12 }}>{welcomeMsg.text}</div>}
+            <div className="button-row">
+              <button type="submit" className="btn btn-gold" disabled={savingWelcome}>
+                {savingWelcome ? 'جارٍ الحفظ…' : 'حفظ بريد المُرسِل'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="card profile-card-main" style={{ gridColumn: '1 / -1' }}>
+          <div className="section-head">
+            <h2>نصّ رسالة الترحيب</h2>
+            {letterIsCustom
+              ? <span className="download" style={{ cursor: 'default' }}>نصّ مخصّص</span>
+              : <span className="download" style={{ cursor: 'default' }}>النصّ الرسمي</span>}
+          </div>
+          <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
+            هذا النصّ <strong>موحّد للمنصة كلها</strong> ويخرج باسم الوزارة، لذلك
+            {canEditLetter ? ' يعدّله المشرفون فقط — وأي تعديل هنا يسري على رسائل جميع الحسابات.'
+                           : ' لا يمكن تعديله إلا من قِبل المشرف. هذا ما سيُرسَل باسمك.'}
           </p>
           <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
             تُرسَل الرسالة بلغة الكرت: كرت عربي يستلم النصّ العربي وحده، وكرت بلغة أخرى يستلم
             النصّ العربي والنصّ بلغته في بريد واحد، وتبدأ بتحية مناسبة لصاحب الكرت.
             <code style={{ margin: '0 4px' }}>{SALUTATION_TOKEN}</code>
-            هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال نصّك كما هو دون تحية.
+            هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال النصّ كما هو دون تحية.
           </p>
-          <form onSubmit={saveWelcome}>
-            <label htmlFor="sender_email">بريد المُرسِل</label>
-            <input id="sender_email" type="email" dir="ltr" value={welcome.sender_email}
-              onChange={(e) => setWelcome((w) => ({ ...w, sender_email: e.target.value }))}
-              placeholder="you@example.com" />
-
+          <form onSubmit={saveLetter}>
             <label htmlFor="welcome_subject">عنوان الرسالة (عربي)</label>
-            <input id="welcome_subject" type="text" value={welcome.welcome_subject}
-              onChange={(e) => setWelcome((w) => ({ ...w, welcome_subject: e.target.value }))} />
+            <input id="welcome_subject" type="text" value={letter.welcome_subject}
+              readOnly={!canEditLetter} disabled={!canEditLetter}
+              onChange={(e) => setLetter((l) => ({ ...l, welcome_subject: e.target.value }))} />
             <label htmlFor="welcome_message">نص الرسالة (عربي)</label>
-            <textarea id="welcome_message" rows={12} value={welcome.welcome_message}
-              onChange={(e) => setWelcome((w) => ({ ...w, welcome_message: e.target.value }))} />
+            <textarea id="welcome_message" rows={12} value={letter.welcome_message}
+              readOnly={!canEditLetter} disabled={!canEditLetter}
+              onChange={(e) => setLetter((l) => ({ ...l, welcome_message: e.target.value }))} />
 
             <label htmlFor="welcome_subject_en">عنوان الرسالة (اللغة الثانية)</label>
-            <input id="welcome_subject_en" type="text" dir="ltr" value={welcome.welcome_subject_en}
-              onChange={(e) => setWelcome((w) => ({ ...w, welcome_subject_en: e.target.value }))} />
+            <input id="welcome_subject_en" type="text" dir="ltr" value={letter.welcome_subject_en}
+              readOnly={!canEditLetter} disabled={!canEditLetter}
+              onChange={(e) => setLetter((l) => ({ ...l, welcome_subject_en: e.target.value }))} />
             <label htmlFor="welcome_message_en">نص الرسالة (اللغة الثانية)</label>
-            <textarea id="welcome_message_en" rows={12} dir="ltr" value={welcome.welcome_message_en}
-              onChange={(e) => setWelcome((w) => ({ ...w, welcome_message_en: e.target.value }))} />
-            {welcomeMsg && <div className={`status-box ${welcomeMsg.type}`} style={{ marginTop: 12 }}>{welcomeMsg.text}</div>}
-            <div className="button-row">
-              <button type="submit" className="btn btn-gold" disabled={savingWelcome}>
-                {savingWelcome ? 'جارٍ الحفظ…' : 'حفظ إعدادات الترحيب'}
-              </button>
-            </div>
+            <textarea id="welcome_message_en" rows={12} dir="ltr" value={letter.welcome_message_en}
+              readOnly={!canEditLetter} disabled={!canEditLetter}
+              onChange={(e) => setLetter((l) => ({ ...l, welcome_message_en: e.target.value }))} />
+
+            {letterMsg && <div className={`status-box ${letterMsg.type}`} style={{ marginTop: 12 }}>{letterMsg.text}</div>}
+
+            {canEditLetter && (
+              confirmReset ? (
+                <div className="status-box error" style={{ marginTop: 12 }}>
+                  <div>سيعود النصّ إلى الصيغة الرسمية الافتراضية <strong>لكل الحسابات</strong>، ويُفقد أي تعديل مخصّص. متابعة؟</div>
+                  <div className="button-row" style={{ marginTop: 10 }}>
+                    <button type="button" className="btn btn-gold" onClick={doResetLetter} disabled={resetting}>
+                      {resetting ? 'جارٍ الإرجاع…' : 'نعم، أعد الضبط'}
+                    </button>
+                    <button type="button" onClick={() => setConfirmReset(false)} disabled={resetting}>تراجع</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="button-row">
+                  <button type="submit" className="btn btn-gold" disabled={savingLetter}>
+                    {savingLetter ? 'جارٍ الحفظ…' : 'حفظ النصّ للمنصة'}
+                  </button>
+                  <button type="button" onClick={() => { setLetterMsg(null); setConfirmReset(true); }}
+                    disabled={savingLetter || !letterIsCustom}
+                    title={letterIsCustom ? undefined : 'النصّ الحالي هو الافتراضي أصلاً'}>
+                    إعادة الضبط للافتراضي
+                  </button>
+                </div>
+              )
+            )}
           </form>
         </div>
       </div>

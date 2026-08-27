@@ -12,6 +12,8 @@ from .views import (
     ProfileView,
     RegisterView,
     ResetPasswordView,
+    WelcomeLetterResetView,
+    WelcomeLetterView,
     WelcomeTestView,
 )
 
@@ -43,6 +45,10 @@ auth_patterns = [
     path('auth/profile/', ProfileView.as_view()),
     path('auth/change-password', ChangePasswordView.as_view()),
     path('auth/change-password/', ChangePasswordView.as_view()),
+    path('auth/welcome-letter', WelcomeLetterView.as_view()),
+    path('auth/welcome-letter/', WelcomeLetterView.as_view()),
+    path('auth/welcome-letter/reset', WelcomeLetterResetView.as_view()),
+    path('auth/welcome-letter/reset/', WelcomeLetterResetView.as_view()),
     path('auth/welcome-test', WelcomeTestView.as_view()),
     path('auth/welcome-test/', WelcomeTestView.as_view()),
     path('auth/forgot-password', ForgotPasswordView.as_view()),

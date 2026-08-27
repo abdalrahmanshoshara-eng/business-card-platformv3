@@ -10,8 +10,8 @@ the card's own language appears beside it when the card is not Arabic:
 Both blocks travel in a SINGLE email, Arabic first.
 
 Letter text per language, in order of preference:
-    1. the letter the account owner wrote in their profile (Arabic field for the
-       Arabic block, secondary field for the other block),
+    1. the platform letter an admin set (accounts.WelcomeLetter) — one letter
+       for every account, since it goes out as official ministry correspondence,
     2. the reviewed template for that language (accounts/welcome_templates.py),
     3. a cached machine translation (services/welcome_translate.py),
     4. the English text as-is — never an empty message.
@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import re
 
+from accounts.models import WelcomeLetter
 from accounts.services_email import WelcomeSection
 from accounts.welcome_templates import (
     SALUTATION_TOKEN,
@@ -135,27 +136,24 @@ def apply_salutation(body: str, salutation: str) -> str:
 
 # ── Letter text ───────────────────────────────────────────────────────────────
 
-def _profile_letter(profile, language: str) -> tuple[str, str]:
-    """The account owner's own letter for this language, or ('', '') when they
-    left it at the default."""
-    if profile is None:
+def _configured_letter(letter, language: str) -> tuple[str, str]:
+    """The admin's platform letter for this language, or ('', '') when it is
+    still on the shipped default."""
+    if letter is None:
         return '', ''
     if language == PRIMARY_LANGUAGE:
-        return (profile.welcome_subject or '').strip(), (profile.welcome_message or '').strip()
-    return (
-        (getattr(profile, 'welcome_subject_en', '') or '').strip(),
-        (getattr(profile, 'welcome_message_en', '') or '').strip(),
-    )
+        return letter.subject_ar.strip(), letter.body_ar.strip()
+    return letter.subject_en.strip(), letter.body_en.strip()
 
 
-def resolve_letter(profile, language: str) -> tuple[str, str]:
+def resolve_letter(letter, language: str) -> tuple[str, str]:
     """(subject, body) for one language, before the salutation is filled in."""
-    subject, body = _profile_letter(profile, language)
+    subject, body = _configured_letter(letter, language)
     if body:
         if language in {PRIMARY_LANGUAGE, 'en'}:
             return subject, body
-        # Custom text for a card language we can't assume the owner wrote in:
-        # translate once (cached), and keep their original if that fails.
+        # Custom text in a language the admin did not write it in: translate
+        # once (cached), and keep the original if that fails.
         from .welcome_translate import translate_letter
         translated = translate_letter(subject, body, language)
         return translated if translated else (subject, body)
@@ -174,11 +172,15 @@ def resolve_letter(profile, language: str) -> tuple[str, str]:
     return english_subject, english_body
 
 
-def build_welcome_sections(card, profile) -> list[WelcomeSection]:
-    """The full message for ``card``: one block per language, Arabic first."""
+def build_welcome_sections(card) -> list[WelcomeSection]:
+    """The full message for ``card``: one block per language, Arabic first.
+
+    The letter is the platform's, the salutation is the card's.
+    """
     sections = []
+    letter = WelcomeLetter.load()  # one query, shared by every language block
     for language in card_languages(card):
-        subject, body = resolve_letter(profile, language)
+        subject, body = resolve_letter(letter, language)
         body = apply_salutation(body, build_salutation(card, language))
         if not body.strip():
             continue
