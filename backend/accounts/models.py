@@ -42,55 +42,46 @@ class Profile(models.Model):
 
 
 class WelcomeLetter(models.Model):
-    """The platform's official welcome letter — one row for everyone.
+    """One account's welcome letter.
 
-    The letter is signed by the Deputy Minister, so it is ministry
-    correspondence rather than personal mail: an admin sets it once and every
-    account sends that exact text. Ordinary users only choose the sender email
-    on their own profile.
-
-    A blank field falls back to the reviewed template for that language in
-    ``welcome_templates.py``, which is also what "reset to default" produces —
-    resetting clears the row instead of copying the template into it, so the
-    letter keeps tracking the shipped default.
+    Each user writes their own wording and can put it back to the ministry's
+    default at any time. A row exists only while a user has customised
+    something: a blank field falls back to the reviewed template for that
+    language in ``welcome_templates.py``, and "reset to default" DELETES the row
+    rather than copying the template into it — so a reset letter keeps tracking
+    the shipped default, and a later correction to the template reaches everyone
+    who never customised.
     """
 
-    SINGLETON_PK = 1
-
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='welcome_letter',
+    )
     subject_ar = models.CharField(max_length=255, blank=True)
     body_ar = models.TextField(blank=True)
     subject_en = models.CharField(max_length=255, blank=True)
     body_en = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
-    updated_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='+',
-    )
 
     LETTER_FIELDS = ('subject_ar', 'body_ar', 'subject_en', 'body_en')
 
     @classmethod
-    def load(cls) -> 'WelcomeLetter':
-        """The single row. Returns an UNSAVED instance when none exists yet, so
-        reading the letter while sending never writes to the database."""
-        return cls.objects.filter(pk=cls.SINGLETON_PK).first() or cls(pk=cls.SINGLETON_PK)
-
-    def save(self, *args, **kwargs):
-        self.pk = self.SINGLETON_PK
-        super().save(*args, **kwargs)
+    def load(cls, user) -> 'WelcomeLetter':
+        """This user's letter. Returns an UNSAVED blank instance when they have
+        never customised it, so reading the letter while sending never writes."""
+        if user is None or not getattr(user, 'pk', None):
+            return cls()
+        return cls.objects.filter(user=user).first() or cls(user=user)
 
     @property
     def is_customized(self) -> bool:
         return any(getattr(self, field).strip() for field in self.LETTER_FIELDS)
 
-    def reset(self, by=None) -> None:
-        for field in self.LETTER_FIELDS:
-            setattr(self, field, '')
-        self.updated_by = by
-        self.save()
+    @classmethod
+    def reset_for(cls, user) -> None:
+        """Back to the ministry default: drop the row entirely."""
+        cls.objects.filter(user=user).delete()
 
     def __str__(self):
-        return 'رسالة الترحيب المخصصة' if self.is_customized else 'رسالة الترحيب الافتراضية'
+        return f'WelcomeLetter<{self.user_id}>'

@@ -51,8 +51,6 @@ function UserCardsInner() {
 
   const displayName = user ? ([user.first_name, user.last_name].filter(Boolean).join(' ') || user.username) : '';
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pageStart = total ? (page - 1) * pageSize + 1 : 0;
-  const pageEnd = Math.min(page * pageSize, total);
 
   return (
     <main className="container">
@@ -115,16 +113,15 @@ function UserCardsInner() {
               </table>
             </div>
 
-            <div className="pagination-info">
-              المعروض: <strong>{pageStart}-{pageEnd}</strong> من <strong>{total}</strong>
-            </div>
-            <nav className="pagination-bar" aria-label="التنقل بين صفحات الكروت">
-              <button type="button" className="btn-small" disabled={loading || page <= 1}
-                onClick={() => setPage((c) => Math.max(1, c - 1))}>السابق</button>
-              <span>صفحة <strong>{page}</strong> من <strong>{totalPages}</strong></span>
-              <button type="button" className="btn-small" disabled={loading || page >= totalPages}
-                onClick={() => setPage((c) => Math.min(totalPages, c + 1))}>التالي</button>
-            </nav>
+            {totalPages > 1 && (
+              <nav className="pagination-bar" aria-label="التنقل بين صفحات الكروت">
+                <button type="button" className="btn-small" disabled={loading || page <= 1}
+                  onClick={() => setPage((c) => Math.max(1, c - 1))}>السابق</button>
+                <span>صفحة <strong>{page}</strong> من <strong>{totalPages}</strong></span>
+                <button type="button" className="btn-small" disabled={loading || page >= totalPages}
+                  onClick={() => setPage((c) => Math.min(totalPages, c + 1))}>التالي</button>
+              </nav>
+            )}
           </>
         )}
       </div>
