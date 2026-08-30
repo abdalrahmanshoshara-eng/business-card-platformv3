@@ -4,18 +4,20 @@ export type WelcomeEmailConfig = {
   // The only welcome setting a user owns.
   sender_email: string;
   configured: boolean;
-  // The platform-wide letter: Arabic (primary) plus the secondary-language
-  // letter, sent side by side when the recipient's card is not Arabic. Same for
-  // every account — only an admin may change it.
+  // This account's own letter: Arabic (primary) plus the secondary-language
+  // letter, sent side by side when the recipient's card is not Arabic. Blank
+  // fields fall back to the ministry default.
   welcome_subject: string;
   welcome_message: string;
   welcome_subject_en: string;
   welcome_message_en: string;
   is_customized: boolean;
   can_edit_letter: boolean;
+  // Sending to an arbitrary address is a mail-config diagnostic: admins only.
+  can_test_send: boolean;
 };
 
-// The letter fields, editable by admins through the welcome-letter endpoint.
+// The letter fields, saved through the welcome-letter endpoint.
 export type WelcomeLetterUpdate = Partial<{
   welcome_subject: string;
   welcome_message: string;
@@ -90,12 +92,12 @@ export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name'
   });
 }
 
-/** The platform-wide welcome letter, plus whether this user may edit it. */
+/** This user's welcome letter as it will be sent. */
 export async function fetchWelcomeLetter(): Promise<WelcomeEmailConfig> {
   return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter');
 }
 
-/** Admin-only: change the platform-wide welcome letter. */
+/** Save this user's welcome letter. */
 export async function updateWelcomeLetter(payload: WelcomeLetterUpdate): Promise<WelcomeEmailConfig> {
   await ensureCsrf();
   return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter', {
@@ -105,7 +107,7 @@ export async function updateWelcomeLetter(payload: WelcomeLetterUpdate): Promise
   });
 }
 
-/** Admin-only: restore the official default letter for every account. */
+/** Put this user's letter back to the ministry default. */
 export async function resetWelcomeLetter(): Promise<WelcomeEmailConfig> {
   await ensureCsrf();
   return fetchJson<WelcomeEmailConfig>('/auth/welcome-letter/reset', {

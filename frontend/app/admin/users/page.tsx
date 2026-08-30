@@ -76,6 +76,7 @@ function AdminUsersInner() {
   const [pageSize, setPageSize] = useState(20);
   const [form, setForm] = useState<CreateUserPayload>(EMPTY);
   const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [createMsg, setCreateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -94,6 +95,18 @@ function AdminUsersInner() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Escape closes whichever dialog is open, unless it is mid-request.
+  useEffect(() => {
+    if (!createOpen && !deleteTarget) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return;
+      if (createOpen && !creating) setCreateOpen(false);
+      if (deleteTarget && !deleting) setDeleteTarget(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createOpen, creating, deleteTarget, deleting]);
+
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return users;
@@ -105,8 +118,18 @@ function AdminUsersInner() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const pageStart = filtered.length ? (page - 1) * pageSize + 1 : 0;
-  const pageEnd = Math.min(page * pageSize, filtered.length);
+
+  function openCreate() {
+    setForm(EMPTY);
+    setCreateMsg(null);
+    setCreateOpen(true);
+  }
+
+  function closeCreate() {
+    if (creating) return;
+    setCreateOpen(false);
+    setCreateMsg(null);
+  }
 
   async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,6 +138,7 @@ function AdminUsersInner() {
     try {
       await createUser({ ...form, username: form.username.trim(), email: form.email.trim() });
       setForm(EMPTY);
+      setCreateOpen(false);
       setCreateMsg({ type: 'success', text: 'تم إنشاء المستخدم.' });
       await load();
     } catch (err) {
@@ -154,52 +178,24 @@ function AdminUsersInner() {
       <PageHero title="إدارة المستخدمين" description="إنشاء الحسابات وإدارتها وتعيين كلمات المرور وعرض كروت كل مستخدم." />
 
       <div className="card">
-        <div className="section-head"><h2>إضافة مستخدم</h2></div>
-        <form onSubmit={submitCreate}>
-          <div className="grid">
-            <div>
-              <label htmlFor="u-username">اسم المستخدم</label>
-              <input id="u-username" value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} required />
-            </div>
-            <div>
-              <label htmlFor="u-email">البريد الإلكتروني</label>
-              <input id="u-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} required />
-            </div>
-            <div>
-              <label htmlFor="u-first">الاسم الأول</label>
-              <input id="u-first" value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} />
-            </div>
-            <div>
-              <label htmlFor="u-last">الاسم الأخير</label>
-              <input id="u-last" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} />
-            </div>
-            <div>
-              <label htmlFor="u-phone">رقم الموبايل (اختياري)</label>
-              <input id="u-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="09xxxxxxxx" />
-            </div>
-            <div>
-              <label htmlFor="u-pass">كلمة المرور</label>
-              <input id="u-pass" type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} required autoComplete="new-password" />
-            </div>
-          </div>
-          <p className="helper-text" style={{ marginTop: 8 }}>يُنشأ الحساب كمستخدم عادي ونشط مباشرةً.</p>
-          {createMsg && <div className={`status-box ${createMsg.type}`} style={{ marginTop: 12 }}>{createMsg.text}</div>}
-          <div className="button-row">
-            <button type="submit" className="btn btn-gold" disabled={creating}>{creating ? 'جارٍ الإنشاء…' : 'إنشاء المستخدم'}</button>
-          </div>
-        </form>
-      </div>
-
-      <div className="card">
         <div className="section-head">
           <h2>المستخدمون</h2>
-          <label className="page-size-control">
-            عدد الصفوف
-            <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}>
-              {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
-            </select>
-          </label>
+          <div className="section-head-actions">
+            <button type="button" className="btn-add" onClick={openCreate} title="إضافة مستخدم جديد">
+              <span className="btn-add-plus" aria-hidden="true">+</span>
+              إضافة مستخدم
+            </button>
+            <label className="page-size-control">
+              عدد الصفوف
+              <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}>
+                {PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
+        {createMsg?.type === 'success' && (
+          <div className="status-box success" style={{ marginBottom: 12 }}>{createMsg.text}</div>
+        )}
         <label htmlFor="user-search">بحث بالاسم أو البريد</label>
         <input
           id="user-search"
@@ -220,7 +216,7 @@ function AdminUsersInner() {
         ) : (
           <>
           <div className="table-wrap">
-            <table>
+            <table className="users-table">
               <thead>
                 <tr>
                   <th>المستخدم</th><th>البريد</th><th>الموبايل</th><th>الاسم</th>
@@ -255,17 +251,69 @@ function AdminUsersInner() {
               </tbody>
             </table>
           </div>
-          <div className="pagination-info">
-            المعروض: <strong>{pageStart}-{pageEnd}</strong> من <strong>{filtered.length}</strong>
-          </div>
-          <nav className="pagination-bar" aria-label="صفحات المستخدمين">
-            <button type="button" className="btn-small" disabled={page <= 1} onClick={() => setPage((c) => Math.max(1, c - 1))}>السابق</button>
-            <span>صفحة <strong>{page}</strong> من <strong>{totalPages}</strong></span>
-            <button type="button" className="btn-small" disabled={page >= totalPages} onClick={() => setPage((c) => Math.min(totalPages, c + 1))}>التالي</button>
-          </nav>
+          {totalPages > 1 && (
+            <nav className="pagination-bar" aria-label="صفحات المستخدمين">
+              <button type="button" className="btn-small" disabled={page <= 1} onClick={() => setPage((c) => Math.max(1, c - 1))}>السابق</button>
+              <span>صفحة <strong>{page}</strong> من <strong>{totalPages}</strong></span>
+              <button type="button" className="btn-small" disabled={page >= totalPages} onClick={() => setPage((c) => Math.min(totalPages, c + 1))}>التالي</button>
+            </nav>
+          )}
           </>
         )}
       </div>
+
+      {createOpen && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="إضافة مستخدم"
+          onClick={closeCreate}
+        >
+          <div className="modal-panel" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="section-head">
+              <h2>إضافة مستخدم</h2>
+              <button type="button" className="btn-small" onClick={closeCreate} disabled={creating}>إغلاق</button>
+            </div>
+            <form onSubmit={submitCreate}>
+              <div className="grid">
+                <div>
+                  <label htmlFor="u-username">اسم المستخدم</label>
+                  <input id="u-username" value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} required autoFocus />
+                </div>
+                <div>
+                  <label htmlFor="u-email">البريد الإلكتروني</label>
+                  <input id="u-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} required />
+                </div>
+                <div>
+                  <label htmlFor="u-first">الاسم الأول</label>
+                  <input id="u-first" value={form.first_name} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label htmlFor="u-last">الاسم الأخير</label>
+                  <input id="u-last" value={form.last_name} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} />
+                </div>
+                <div>
+                  <label htmlFor="u-phone">رقم الموبايل (اختياري)</label>
+                  <input id="u-phone" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} placeholder="09xxxxxxxx" />
+                </div>
+                <div>
+                  <label htmlFor="u-pass">كلمة المرور</label>
+                  <input id="u-pass" type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} required autoComplete="new-password" />
+                </div>
+              </div>
+              <p className="helper-text" style={{ marginTop: 8 }}>يُنشأ الحساب كمستخدم عادي ونشط مباشرةً.</p>
+              {createMsg?.type === 'error' && (
+                <div className="status-box error" style={{ marginTop: 12 }}>{createMsg.text}</div>
+              )}
+              <div className="button-row">
+                <button type="submit" className="btn btn-gold" disabled={creating}>{creating ? 'جارٍ الإنشاء…' : 'إنشاء المستخدم'}</button>
+                <button type="button" onClick={closeCreate} disabled={creating}>إلغاء</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {deleteTarget && (
         <div

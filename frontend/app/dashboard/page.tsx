@@ -748,91 +748,96 @@ function DashboardPageInner() {
       </section>
 
       <section className="table-wrap" aria-label="جدول بيانات الكروت">
-        <table>
+        <table className="dashboard-table">
           <thead>
             <tr>
-              <th>#</th>
-              <th>اسم الشخص</th>
-              <th>الشركة</th>
-              <th>المنصب</th>
-              <th>الموبايل</th>
-              <th>الإيميل</th>
-              <th>الموقع الالكتروني </th>
+              <th>الكرت</th>
+              <th>الشركة والنشاط</th>
+              <th>بيانات الاتصال</th>
               <th>الدولة</th>
-              <th>نشاط الشركة</th>
-              <th>نوع الاستثمار</th>
               <th>تاريخ الإضافة</th>
-              <th>الحالة</th>
-              <th>الترحيب</th>
+              <th>الحالة والترحيب</th>
               <th>إجراءات</th>
             </tr>
           </thead>
           <tbody>
             {cards.map((card) => (
               <tr key={card.id}>
-                <td data-label="#" className="seq-cell">
-                  {card.sequence_number}
+                {/* الشخص: الرقم التسلسلي + الاسم + المنصب */}
+                <td data-label="الكرت" className="primary-cell">
+                  <div className="cell-stack">
+                    <span className="seq-badge">#{card.sequence_number}</span>
+                    <BilingualCell primary={card.person_name} ar={card.person_name_ar} en={card.person_name_en} />
+                    <span className="cell-sub">
+                      <BilingualCell primary={card.job_title} ar={card.job_title_ar} en={card.job_title_en} />
+                    </span>
+                  </div>
                 </td>
-                <td data-label="اسم الشخص" className="primary-cell">
-                  <BilingualCell primary={card.person_name} ar={card.person_name_ar} en={card.person_name_en} />
+                {/* الشركة: الاسم + النشاط + نوع الاستثمار */}
+                <td data-label="الشركة والنشاط">
+                  <div className="cell-stack">
+                    <BilingualCell primary={card.company_name} ar={card.company_name_ar} en={card.company_name_en} />
+                    {card.company_activity && (
+                      <span className="cell-sub">{card.company_activity}</span>
+                    )}
+                    {displayInvestment(card) !== "-" && (
+                      <span className="cell-chip">{displayInvestment(card)}</span>
+                    )}
+                  </div>
                 </td>
-                <td data-label="الشركة">
-                  <BilingualCell primary={card.company_name} ar={card.company_name_ar} en={card.company_name_en} />
-                </td>
-                <td data-label="المنصب">
-                  <BilingualCell primary={card.job_title} ar={card.job_title_ar} en={card.job_title_en} />
-                </td>
-                <td data-label="الموبايل">
-                  <PhoneList numbers={card.mobile_numbers} />
-                </td>
-                <td data-label="الإيميل" className="ltr-text">
-                  {(card.emails || []).join(" | ") || "-"}
-                </td>
-                <td data-label="الموقع" className="ltr-text">
-                  {card.website || "-"}
+                {/* الاتصال: الموبايل + الإيميل + الموقع */}
+                <td data-label="بيانات الاتصال">
+                  <div className="cell-stack">
+                    <PhoneList numbers={card.mobile_numbers} />
+                    {(card.emails || []).length > 0 && (
+                      <span className="cell-sub ltr-text">{(card.emails || []).join(" | ")}</span>
+                    )}
+                    {card.website && <span className="cell-sub ltr-text">{card.website}</span>}
+                  </div>
                 </td>
                 <td data-label="الدولة">{card.country || "-"}</td>
-                <td data-label="نشاط الشركة">{card.company_activity || "-"}</td>
-                <td data-label="نوع الاستثمار">{displayInvestment(card)}</td>
-                <td data-label="تاريخ الإضافة">{(card.created_at || "").slice(0, 10) || "-"}</td>
-                <td data-label="الحالة">
-                  {card.needs_review ? (
-                    <span className="badge warning">مراجعة</span>
-                  ) : (
-                    <span className="badge success">جاهز</span>
-                  )}
+                <td data-label="تاريخ الإضافة" className="date-cell">
+                  {(card.created_at || "").slice(0, 10) || "-"}
                 </td>
-                <td data-label="الترحيب">
-                  {!(card.emails || []).length ? (
-                    <span className="muted-dash">—</span>
-                  ) : card.welcome_status === "sent" ? (
-                    // Sent: a static, non-clickable chip with no hover.
-                    <span
-                      className="welcome-chip sent"
-                      title={`تم إرسال الترحيب${card.welcome_sent_to ? " إلى " + card.welcome_sent_to : ""}`}
-                    >
-                      تم الترحيب ✓
-                    </span>
-                  ) : (
-                    // not_sent → send; failed (red) → retry.
-                    <button
-                      type="button"
-                      className={card.welcome_status === "failed" ? "btn-small welcome-failed" : "btn-small welcome-send"}
-                      disabled={welcomeBusyId === card.id}
-                      onClick={() => handleWelcome(card)}
-                      title={
-                        card.welcome_status === "failed"
-                          ? "فشل إرسال الترحيب — اضغط لإعادة المحاولة"
-                          : "إرسال رسالة ترحيب إلى بريد الكرت"
-                      }
-                    >
-                      {welcomeBusyId === card.id
-                        ? "جارٍ..."
-                        : card.welcome_status === "failed"
-                          ? "فشل الترحيب"
-                          : "إرسال ترحيب"}
-                    </button>
-                  )}
+                {/* الحالة + الترحيب */}
+                <td data-label="الحالة والترحيب">
+                  <div className="cell-stack">
+                    {card.needs_review ? (
+                      <span className="badge warning">مراجعة</span>
+                    ) : (
+                      <span className="badge success">جاهز</span>
+                    )}
+                    {!(card.emails || []).length ? (
+                      <span className="muted-dash">—</span>
+                    ) : card.welcome_status === "sent" ? (
+                      // Sent: a static, non-clickable chip with no hover.
+                      <span
+                        className="welcome-chip sent"
+                        title={`تم إرسال الترحيب${card.welcome_sent_to ? " إلى " + card.welcome_sent_to : ""}`}
+                      >
+                        تم الترحيب ✓
+                      </span>
+                    ) : (
+                      // not_sent → send; failed (red) → retry.
+                      <button
+                        type="button"
+                        className={card.welcome_status === "failed" ? "btn-small welcome-failed" : "btn-small welcome-send"}
+                        disabled={welcomeBusyId === card.id}
+                        onClick={() => handleWelcome(card)}
+                        title={
+                          card.welcome_status === "failed"
+                            ? "فشل إرسال الترحيب — اضغط لإعادة المحاولة"
+                            : "إرسال رسالة ترحيب إلى بريد الكرت"
+                        }
+                      >
+                        {welcomeBusyId === card.id
+                          ? "جارٍ..."
+                          : card.welcome_status === "failed"
+                            ? "فشل الترحيب"
+                            : "إرسال ترحيب"}
+                      </button>
+                    )}
+                  </div>
                 </td>
                 <td data-label="إجراءات">
                   <div className="row-actions">
@@ -868,7 +873,7 @@ function DashboardPageInner() {
             ))}
             {!cards.length && (
               <tr>
-                <td colSpan={14} className="empty-cell">
+                <td colSpan={7} className="empty-cell">
                   {loading
                     ? "جاري تحميل البيانات..."
                     : "لا توجد بيانات مطابقة للبحث."}
@@ -879,27 +884,29 @@ function DashboardPageInner() {
         </table>
       </section>
 
-      <nav className="pagination-bar" aria-label="التنقل بين صفحات الكروت">
-        <button
-          type="button"
-          className="btn-small"
-          disabled={loading || page <= 1}
-          onClick={() => setPage((current) => Math.max(1, current - 1))}
-        >
-          السابق
-        </button>
-        <span>
-          صفحة <strong>{page}</strong> من <strong>{totalPages}</strong>
-        </span>
-        <button
-          type="button"
-          className="btn-small"
-          disabled={loading || page >= totalPages}
-          onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-        >
-          التالي
-        </button>
-      </nav>
+      {totalPages > 1 && (
+        <nav className="pagination-bar" aria-label="التنقل بين صفحات الكروت">
+          <button
+            type="button"
+            className="btn-small"
+            disabled={loading || page <= 1}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            السابق
+          </button>
+          <span>
+            صفحة <strong>{page}</strong> من <strong>{totalPages}</strong>
+          </span>
+          <button
+            type="button"
+            className="btn-small"
+            disabled={loading || page >= totalPages}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            التالي
+          </button>
+        </nav>
+      )}
 
       <WelcomePrompt
         open={welcomeSetupOpen}

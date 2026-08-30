@@ -126,19 +126,13 @@ class ProfileView(APIView):
 
 
 class WelcomeLetterView(APIView):
-    """The platform-wide welcome letter.
+    """The signed-in user's own welcome letter: read it, and rewrite it.
 
-    Readable by any signed-in user — it goes out in their name, so they get to
-    see it — but writable only by admins, because it is official ministry
-    correspondence signed by the Deputy Minister rather than personal mail.
+    Scoped to request.user throughout, so one account can neither read nor
+    change another's wording.
     """
 
     permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        if self.request.method in ('PATCH', 'PUT', 'POST'):
-            return [IsAuthenticated(), IsAdmin()]
-        return super().get_permissions()
 
     def get(self, request):
         return Response(get_welcome_config(request.user))
@@ -146,21 +140,21 @@ class WelcomeLetterView(APIView):
     def patch(self, request):
         serializer = WelcomeLetterSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save(by=request.user)
+        serializer.save(user=request.user)
         return Response(get_welcome_config(request.user))
 
 
 class WelcomeLetterResetView(APIView):
-    """Restore the shipped default letter for the whole platform.
+    """Put this user's letter back to the ministry default.
 
-    Clears the stored text rather than copying the template into it, so the
-    letter keeps tracking the reviewed default in welcome_templates.py.
+    Drops their row rather than copying the template into it, so the letter
+    keeps tracking the reviewed default in welcome_templates.py.
     """
 
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        WelcomeLetter.load().reset(by=request.user)
+        WelcomeLetter.reset_for(request.user)
         payload = get_welcome_config(request.user)
         payload['detail'] = 'تمت إعادة رسالة الترحيب إلى النص الرسمي الافتراضي.'
         return Response(payload)
@@ -187,7 +181,7 @@ class WelcomeTestView(APIView):
             return Response({'detail': 'يرجى إدخال بريد إلكتروني صالح.', 'error_type': 'invalid_email'}, status=status.HTTP_400_BAD_REQUEST)
 
         profile = getattr(request.user, 'profile', None)
-        letter = effective_letter()
+        letter = effective_letter(request.user)
         subject = letter['welcome_subject']
         # No card here, so the placeholder becomes the generic wording.
         body = letter['welcome_message'].replace(SALUTATION_TOKEN, default_salutation('ar'))

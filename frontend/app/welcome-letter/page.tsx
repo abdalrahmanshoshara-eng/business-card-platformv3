@@ -4,7 +4,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { RequireAuth } from '@/features/auth/Guard';
-import { useAuth } from '@/features/auth/AuthProvider';
 import {
   fetchWelcomeLetter,
   resetWelcomeLetter,
@@ -26,10 +25,9 @@ const EMPTY = {
 type Note = { type: 'success' | 'error'; text: string } | null;
 
 function WelcomeLetterInner() {
-  const { isAdmin } = useAuth();
-
   const [letter, setLetter] = useState(EMPTY);
   const [canEdit, setCanEdit] = useState(false);
+  const [canTestSend, setCanTestSend] = useState(false);
   const [isCustomized, setIsCustomized] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -55,6 +53,7 @@ function WelcomeLetterInner() {
           welcome_message_en: cfg.welcome_message_en || '',
         });
         setCanEdit(!!cfg.can_edit_letter);
+        setCanTestSend(!!cfg.can_test_send);
         setIsCustomized(!!cfg.is_customized);
       } catch (err) {
         if (!cancelled) {
@@ -80,7 +79,7 @@ function WelcomeLetterInner() {
     try {
       const cfg = await updateWelcomeLetter(letter);
       setIsCustomized(!!cfg.is_customized);
-      setLetterMsg({ type: 'success', text: 'تم حفظ النصّ. يسري الآن على رسائل جميع الحسابات.' });
+      setLetterMsg({ type: 'success', text: 'تم حفظ نصّ رسالتك.' });
     } catch (err) {
       setLetterMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'تعذّر حفظ النصّ.' });
     } finally {
@@ -128,11 +127,7 @@ function WelcomeLetterInner() {
     <main className="container">
       <PageHero
         title="رسالة الترحيب"
-        description={
-          canEdit
-            ? 'النصّ الرسمي الذي يخرج باسم الوزارة إلى ضيوفها. موحّد لكل الحسابات، وأي تعديل هنا يسري على رسائل جميع المستخدمين.'
-            : 'النصّ الرسمي الذي يخرج باسم الوزارة إلى ضيوفها. موحّد لكل الحسابات ويضبطه المشرف، وهذا ما سيُرسَل باسمك.'
-        }
+        description="الرسالة التي تُرسَل باسمك إلى ضيوف الوزارة. تبدأ بالنصّ الرسمي المعتمد، ولك أن تعدّلها كما تشاء أو تعيدها إليه في أي وقت. تعديلك يخصّك وحدك ولا يمسّ رسائل بقية المستخدمين."
       />
 
       <section className="card">
@@ -147,9 +142,8 @@ function WelcomeLetterInner() {
           تُرسَل الرسالة بلغة الكرت: كرت عربي يستلم النصّ العربي وحده، وكرت بلغة أخرى يستلم النصّ
           العربي والنصّ بلغته في بريد واحد، وتبدأ بتحية مناسبة لصاحب الكرت.
           <code style={{ margin: '0 4px' }}>{SALUTATION_TOKEN}</code>
-          {canEdit
-            ? 'هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال النصّ كما هو دون تحية.'
-            : 'هو موضع تلك التحية، ويُستبدل بها تلقائيًا عند الإرسال حسب صاحب الكرت.'}
+          هو موضع تلك التحية — احتفظ به في بداية النصّ، أو احذفه لإرسال النصّ كما هو دون تحية.
+          وإفراغ الحقول كلها يعيدك إلى النصّ الرسمي، تمامًا كزر إعادة الضبط.
         </p>
 
         {loading ? (
@@ -206,8 +200,8 @@ function WelcomeLetterInner() {
               (confirmReset ? (
                 <div className="status-box error" style={{ marginTop: 12 }}>
                   <div>
-                    سيعود النصّ إلى الصيغة الرسمية الافتراضية <strong>لكل الحسابات</strong>، ويُفقد
-                    أي تعديل مخصّص. متابعة؟
+                    ستعود رسالتك إلى الصيغة الرسمية المعتمدة، ويُفقد <strong>نصّك المعدَّل</strong>.
+                    متابعة؟
                   </div>
                   <div className="button-row" style={{ marginTop: 10 }}>
                     <button type="button" className="btn btn-gold" onClick={doReset} disabled={resetting}>
@@ -230,9 +224,9 @@ function WelcomeLetterInner() {
                       setConfirmReset(true);
                     }}
                     disabled={saving || !isCustomized}
-                    title={isCustomized ? undefined : 'النصّ الحالي هو الافتراضي أصلاً'}
+                    title={isCustomized ? undefined : 'رسالتك على النصّ الرسمي أصلاً'}
                   >
-                    إعادة الضبط للافتراضي
+                    إعادة الضبط للنصّ الرسمي
                   </button>
                 </div>
               ))}
@@ -240,14 +234,14 @@ function WelcomeLetterInner() {
         )}
       </section>
 
-      {isAdmin && (
+      {canTestSend && (
         <section className="card">
           <div className="section-head">
             <h2>اختبار الإرسال</h2>
           </div>
           <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
-            يرسل النصّ أعلاه فعليًا إلى أي بريد تختاره، بتحية عامة بدل تحية الكرت — للتأكد من
-            إعدادات بريد المنصة ومن شكل الرسالة قبل إرسالها إلى ضيف حقيقي. لا يمسّ أي كرت.
+            يرسل رسالتك فعليًا إلى أي بريد تختاره، بتحية عامة بدل تحية الكرت — للتأكد من إعدادات
+            بريد المنصة ومن شكل الرسالة قبل إرسالها إلى ضيف حقيقي. لا يمسّ أي كرت.
           </p>
           <form onSubmit={sendTest}>
             <label htmlFor="test_email">البريد الإلكتروني للمستلم</label>
