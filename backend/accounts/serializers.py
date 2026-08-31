@@ -16,20 +16,19 @@ from .services_email import (
 
 User = get_user_model()
 
-# The only welcome-email setting a user owns. The letter itself is platform-wide
-# (see WelcomeLetter) and admin-only, because it goes out as official ministry
-# correspondence signed by the Deputy Minister. The actual From account is a
-# single platform email in settings, not per user.
+# Saved on the profile. The letter itself has its own model and endpoint (see
+# WelcomeLetter) so it can be edited and reset independently. The actual From
+# account is a single platform email in settings, not per user.
 WELCOME_CONFIG_FIELDS = ('sender_email',)
 
 # Keys of the platform letter, as exposed by the API.
 LETTER_API_FIELDS = ('welcome_subject', 'welcome_message', 'welcome_subject_en', 'welcome_message_en')
 
 
-def effective_letter() -> dict:
-    """The letter as it will actually be sent: the admin's text where set,
-    otherwise the reviewed default for that language."""
-    letter = WelcomeLetter.load()
+def effective_letter(user=None) -> dict:
+    """The letter as this user will actually send it: their own wording where
+    they set it, otherwise the ministry default for that language."""
+    letter = WelcomeLetter.load(user)
     return {
         'welcome_subject': letter.subject_ar or DEFAULT_WELCOME_SUBJECT,
         'welcome_message': letter.body_ar or DEFAULT_WELCOME_MESSAGE,
@@ -40,17 +39,17 @@ def effective_letter() -> dict:
 
 
 def get_welcome_config(user) -> dict:
-    """Everything the profile screen needs: the user's own sender email, the
-    platform letter as it will be sent, and whether this user may edit it."""
+    """Everything the welcome screens need: the user's sender email and their
+    own letter as it will be sent."""
     profile = getattr(user, 'profile', None)
     return {
         'sender_email': profile.sender_email if profile else '',
         'configured': profile.has_welcome_config() if profile else False,
-        # The letter is the same for everyone; only admins may change it, so the
-        # UI shows it read-only to everyone else rather than hiding what will be
-        # sent in their name.
-        'can_edit_letter': is_admin(user),
-        **effective_letter(),
+        # Every user owns their letter, so anyone signed in may edit it. Kept in
+        # the payload because the UI branches on it.
+        'can_edit_letter': True,
+        'can_test_send': is_admin(user),
+        **effective_letter(user),
     }
 
 
@@ -62,8 +61,8 @@ def set_welcome_config(user, data: dict) -> None:
 
 
 class WelcomeLetterSerializer(serializers.Serializer):
-    """The platform-wide letter. Admin-only for writes; a blank field means
-    "use the reviewed default for that language"."""
+    """One user's letter. A blank field means "use the ministry default for that
+    language"."""
 
     welcome_subject = serializers.CharField(required=False, allow_blank=True, max_length=255)
     welcome_message = serializers.CharField(required=False, allow_blank=True)
@@ -77,13 +76,19 @@ class WelcomeLetterSerializer(serializers.Serializer):
         'welcome_message_en': 'body_en',
     }
 
-    def save(self, *, by=None) -> WelcomeLetter:
-        letter = WelcomeLetter.load()
+    def save(self, *, user) -> WelcomeLetter:
+        letter = WelcomeLetter.load(user)
+        letter.user = user
         for api_field, model_field in self.API_TO_MODEL.items():
             if api_field in self.validated_data:
                 setattr(letter, model_field, self.validated_data[api_field].strip())
-        letter.updated_by = by
-        letter.save()
+        if letter.is_customized:
+            letter.save()
+        else:
+            # Everything blank is the same as never having customised, so keep
+            # the letter tracking the shipped default instead of pinning a row
+            # of empty strings.
+            WelcomeLetter.reset_for(user)
         return letter
 
 
@@ -205,11 +210,11 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         # Refuse the letter fields outright instead of ignoring them, so a stale
-        # client never believes it changed the official wording.
+        # client never believes this endpoint saved its wording.
         sent = [field for field in LETTER_API_FIELDS if field in self.initial_data]
         if sent:
             raise serializers.ValidationError({
-                sent[0]: 'نصّ رسالة الترحيب موحّد للمنصة ويعدّله المشرف من إعدادات رسالة الترحيب.',
+                sent[0]: 'نصّ رسالة الترحيب يُحفظ من صفحة «رسالة الترحيب» لا من الملف الشخصي.',
             })
         return attrs
 

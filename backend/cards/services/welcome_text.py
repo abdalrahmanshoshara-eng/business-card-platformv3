@@ -10,8 +10,7 @@ the card's own language appears beside it when the card is not Arabic:
 Both blocks travel in a SINGLE email, Arabic first.
 
 Letter text per language, in order of preference:
-    1. the platform letter an admin set (accounts.WelcomeLetter) — one letter
-       for every account, since it goes out as official ministry correspondence,
+    1. the letter the card's owner wrote (accounts.WelcomeLetter),
     2. the reviewed template for that language (accounts/welcome_templates.py),
     3. a cached machine translation (services/welcome_translate.py),
     4. the English text as-is — never an empty message.
@@ -137,8 +136,8 @@ def apply_salutation(body: str, salutation: str) -> str:
 # ── Letter text ───────────────────────────────────────────────────────────────
 
 def _configured_letter(letter, language: str) -> tuple[str, str]:
-    """The admin's platform letter for this language, or ('', '') when it is
-    still on the shipped default."""
+    """The owner's letter for this language, or ('', '') when they are still on
+    the shipped default."""
     if letter is None:
         return '', ''
     if language == PRIMARY_LANGUAGE:
@@ -152,7 +151,7 @@ def resolve_letter(letter, language: str) -> tuple[str, str]:
     if body:
         if language in {PRIMARY_LANGUAGE, 'en'}:
             return subject, body
-        # Custom text in a language the admin did not write it in: translate
+        # Custom text in a language the owner did not write it in: translate
         # once (cached), and keep the original if that fails.
         from .welcome_translate import translate_letter
         translated = translate_letter(subject, body, language)
@@ -175,10 +174,11 @@ def resolve_letter(letter, language: str) -> tuple[str, str]:
 def build_welcome_sections(card) -> list[WelcomeSection]:
     """The full message for ``card``: one block per language, Arabic first.
 
-    The letter is the platform's, the salutation is the card's.
+    The letter is the card owner's, the salutation is the card's.
     """
     sections = []
-    letter = WelcomeLetter.load()  # one query, shared by every language block
+    # One query, shared by every language block.
+    letter = WelcomeLetter.load(card.owner)
     for language in card_languages(card):
         subject, body = resolve_letter(letter, language)
         body = apply_salutation(body, build_salutation(card, language))
