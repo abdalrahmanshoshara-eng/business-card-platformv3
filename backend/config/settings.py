@@ -220,7 +220,8 @@ GEMINI_CARD_IMAGE_QUALITY = int(os.getenv('GEMINI_CARD_IMAGE_QUALITY', '82'))
 # Hard ceiling for the optimised image sent to Gemini (defensive; the resize
 # usually keeps files well under this).
 GEMINI_CARD_IMAGE_MAX_BYTES = int(os.getenv('GEMINI_CARD_IMAGE_MAX_BYTES', str(4 * 1024 * 1024)))
-
+EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').lower() == 'true'
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '20'))
 # ── Gemini pricing (USD per 1,000,000 tokens) ──────────────────────────────
 # Estimation only — the authoritative bill comes from Google. Prices change, so
 # keep them here (or override with GEMINI_PRICING_JSON) rather than in code.
