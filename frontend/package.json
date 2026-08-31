@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
     "build": "next build",
+    "test": "node --experimental-strip-types --test features/users/password.test.mjs",
     "start": "next start -H 0.0.0.0",
     "lint": "next lint"
   },

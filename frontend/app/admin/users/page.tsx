@@ -5,8 +5,9 @@ import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { RequireAuth } from '@/features/auth/Guard';
+import { PasswordEditor } from '@/features/users/PasswordEditor';
 import {
-  CreateUserPayload, ManagedUser, createUser, deleteUser, listUsers, setUserPassword, updateUser,
+  CreateUserPayload, ManagedUser, createUser, deleteUser, listUsers, updateUser,
 } from '@/features/users/api';
 
 const EMPTY: CreateUserPayload = {
@@ -14,58 +15,6 @@ const EMPTY: CreateUserPayload = {
 };
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100];
-
-function PasswordCell({ user }: { user: ManagedUser }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  async function save() {
-    if (!value) return;
-    setMsg(null);
-    setSaving(true);
-    try {
-      await setUserPassword(user.id, value);
-      setMsg({ type: 'success', text: 'تم' });
-      setValue('');
-      setEditing(false);
-    } catch (err) {
-      setMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'خطأ' });
-    } finally {
-      setSaving(false);
-    }
-  }
-  function cancel() { setEditing(false); setValue(''); setMsg(null); }
-
-  if (!editing) {
-    return (
-      <div className="pw-cell">
-        <span className="pw-dots">••••••••</span>
-        <button type="button" className="icon-btn" title="تعديل كلمة المرور" onClick={() => { setEditing(true); setMsg(null); }}>✏️</button>
-        {msg && <span className={`pw-msg ${msg.type}`}>{msg.text}</span>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="pw-cell">
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }}
-        placeholder="كلمة مرور جديدة"
-        autoComplete="new-password"
-        className="pw-input"
-        autoFocus
-      />
-      <button type="button" className="icon-btn" title="حفظ" disabled={saving || !value} onClick={save}>✔️</button>
-      <button type="button" className="icon-btn" title="إلغاء" onClick={cancel}>✖️</button>
-      {msg && <span className={`pw-msg ${msg.type}`}>{msg.text}</span>}
-    </div>
-  );
-}
 
 function AdminUsersInner() {
   const [users, setUsers] = useState<ManagedUser[]>([]);
@@ -234,7 +183,7 @@ function AdminUsersInner() {
                       {u.is_active ? <span className="badge success">نشط</span> : <span className="badge warning">معطّل</span>}
                     </td>
                     <td data-label="الكروت">{u.card_count}</td>
-                    <td data-label="كلمة المرور"><PasswordCell user={u} /></td>
+                    <td data-label="كلمة المرور"><PasswordEditor user={u} /></td>
                     <td data-label="إجراءات">
                       <div className="row-actions">
                         <Link href={`/admin/users/${u.id}`} className="btn-small btn-gold">عرض الكروت</Link>
