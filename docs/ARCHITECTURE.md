@@ -72,15 +72,17 @@ else:
 
 ```
 frontend/
-├── app/            # صفحات فقط: login, register, profile, admin/users, dashboard, upload
+├── app/            # صفحات فقط: login, profile, admin/users, dashboard, upload
 ├── features/
 │   ├── auth/       # api.ts, AuthProvider.tsx (useAuth), Guard.tsx (RequireAuth)
 │   └── users/      # api.ts لإدارة المستخدمين
 ├── lib/            # api.ts (fetchJson + CSRF + credentials)
-└── components/     # PageHero, UserMenu, ...
+└── components/     # SiteHeader, PageHero, UserMenu, ...
 ```
 
 - الصفحات تركّب المكونات فقط؛ منطق المصادقة في `features/auth`.
+- **لا يوجد تسجيل ذاتي**: صفحة `register` أُزيلت والحسابات يُنشئها المشرف. Endpoint الـBackend ما زال موجوداً لكنه مغلق بـ`PUBLIC_REGISTRATION_ENABLED=false`.
+- `/login` شاشة كاملة بعمودين (نموذج + لوحة هوية تحمل الشعار)؛ لذلك `SiteHeader` يُخفي الشريط العلوي على هذا المسار فقط (`BARE_ROUTES`). أنماطها في القسم 21 من `globals.css`.
 - طلبات API تمر عبر `lib/api.ts` (يرسل الكوكيز و`X-CSRFToken`).
 - الحماية عبر `RequireAuth`/`RequireAuth admin` مع حالة تحميل وإعادة توجيه. الحماية الأساسية في الـBackend.
 - **ممنوع** تخزين بيانات المصادقة في `localStorage/sessionStorage`.
