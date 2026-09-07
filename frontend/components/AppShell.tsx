@@ -47,6 +47,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     } catch { /* storage unavailable: ignore */ }
   }, []);
 
+  // Lock the page behind the drawer: without this a touch-drag on the overlay
+  // scrolls the dashboard underneath it.
+  useEffect(() => {
+    if (!isMobile || !open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previous; };
+  }, [isMobile, open]);
+
   function toggleDesktop() {
     setCollapsed((c) => {
       const next = !c;

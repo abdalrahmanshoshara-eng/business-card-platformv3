@@ -2707,6 +2707,11 @@ li {
     bottom: 0;
     height: auto;
     min-height: 0;
+    /* The desktop rule's `align-self: flex-start` is a self-alignment on an
+       absolutely-positioned box: it shrink-wraps the drawer to its content
+       instead of letting top+bottom stretch it, leaving it hanging in the
+       middle of the screen. Stretch puts that back. */
+    align-self: stretch;
     width: min(84vw, 320px);
     max-width: 320px;
     padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
@@ -2720,6 +2725,8 @@ li {
     box-shadow: -14px 0 34px rgba(4, 48, 42, .38);
     z-index: 55;
     overflow-y: auto;
+    /* Scrolling the drawer must not chain to the page behind it. */
+    overscroll-behavior: contain;
   }
 
   .app-shell.sidebar-open .app-sidebar {
@@ -2733,8 +2740,24 @@ li {
     padding: 13px 14px;
   }
 
+  /* Pinned to the bottom of the drawer, away from the nav items, so it is
+     never mistaken for one more destination. */
   .app-sidebar-logout {
-    margin-top: 20px;
+    margin-top: auto;
+  }
+
+  /* On a short screen (landscape, small phones) the drawer must SCROLL, not
+     squeeze: the desktop rule's `flex: 1; min-height: 0` lets the nav shrink
+     below its content, which slides the last link under the logout button. */
+  .app-sidebar-user,
+  .app-sidebar-logout {
+    flex-shrink: 0;
+  }
+
+  .app-sidebar-nav {
+    flex: 0 0 auto;
+    min-height: auto;
+    gap: 4px;
   }
 }
 
