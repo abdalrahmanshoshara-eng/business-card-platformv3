@@ -27,6 +27,7 @@
      19  Responsive
      20  Motion & print
      21  Auth split (login screen)
+     22  Auth splash (session check)
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 01 · DESIGN TOKENS ─────────────────────────────────────────── */
@@ -3625,6 +3626,116 @@ li {
   .auth-footnote {
     margin-top: 16px;
     padding-top: 12px;
+  }
+}
+
+/* ── 22 · AUTH SPLASH (session check / redirect) ────────────────── */
+/* Rendered by RequireAuth while auth resolves. It covers the top bar too —
+   the splash carries the logo itself — so the wait reads as one continuous
+   branded moment rather than a half-drawn page. */
+.auth-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--green-header);
+  background-image: url(/topbar-bg.jpg);
+  background-size: 520px;
+  background-position: center;
+  background-repeat: repeat;
+  background-blend-mode: soft-light;
+}
+
+.auth-splash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(199, 166, 107, .20), transparent 60%),
+    linear-gradient(180deg, rgba(4, 48, 42, .78), rgba(10, 83, 70, .80) 45%, rgba(4, 48, 42, .93));
+}
+
+.auth-splash-inner {
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+  color: #f7f3e8;
+}
+
+.auth-splash-logo {
+  width: min(260px, 72%);
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(4, 48, 42, .55));
+}
+
+/* Indeterminate progress: a gold sweep in a hairline track. */
+.auth-splash-bar {
+  position: relative;
+  width: min(180px, 60%);
+  height: 3px;
+  margin: 28px auto 18px;
+  border-radius: var(--r-pill);
+  background: rgba(199, 166, 107, .20);
+  overflow: hidden;
+}
+
+.auth-splash-bar span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 40%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, rgba(199, 166, 107, 0), var(--gold), rgba(199, 166, 107, 0));
+  animation: authSplashSweep 1.15s var(--ease) infinite;
+}
+
+@keyframes authSplashSweep {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(370%);
+  }
+}
+
+.auth-splash-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.8;
+  color: rgba(247, 243, 232, .82);
+}
+
+@media (max-width: 620px) {
+  .auth-splash-logo {
+    width: min(210px, 64%);
+  }
+
+  .auth-splash-bar {
+    margin: 22px auto 14px;
+  }
+
+  .auth-splash-text {
+    font-size: 13.5px;
+  }
+}
+
+/* Reduced motion: the global rule collapses the sweep, so show a static
+   filled track instead of a frozen sliver. */
+@media (prefers-reduced-motion: reduce) {
+  .auth-splash-bar span {
+    width: 100%;
+    background: var(--gold);
+    opacity: .7;
   }
 }
 
