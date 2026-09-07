@@ -3405,37 +3405,65 @@ li {
 }
 
 /* ── Responsive ─────────────────────────────────────────────────── */
-/* Below the split breakpoint the screen stops being a fixed two-pane
-   overlay and becomes an ordinary scrolling page: mobile browsers size
-   `position: fixed` to the address-bar-hidden viewport, which buries the
-   submit button under the toolbar. Normal flow + `100dvh` lets the browser
-   manage its own chrome. The negative margin cancels
+/* Below the split breakpoint the two panes stop being side-by-side columns
+   and become LAYERS: the green identity fills the whole screen as the
+   background, and the form rides on top of it inside its own gradient card.
+   Both panels go transparent and `.auth-split` itself carries the green, so
+   the logo sits directly on the background above the card.
+
+   It is also ordinary scrolling flow rather than a fixed overlay: mobile
+   browsers size `position: fixed` to the address-bar-hidden viewport, which
+   buries the submit button under the toolbar. The negative margin cancels
    `body { padding-top: var(--header-h) }` — the top bar is hidden here. */
 @media (max-width: 900px) {
   .auth-split {
-    position: static;
+    position: relative;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr;
     min-height: 100vh;
     min-height: 100dvh;
     margin-top: calc(-1 * var(--header-h));
     overflow: visible;
+    background-color: var(--green-header);
+    background-image: url(/topbar-bg.jpg);
+    background-size: 520px;
+    background-position: center top;
+    background-repeat: repeat;
+    background-blend-mode: soft-light;
+    background-attachment: scroll;
   }
 
-  /* A compact brand band: enough to identify the ministry, never so tall
-     that the fields start below the fold. */
+  /* Tint layer over the pattern, so the logo and the card edge both read. */
+  .auth-split::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgba(199, 166, 107, .20), transparent 60%),
+      linear-gradient(180deg, rgba(4, 48, 42, .74), rgba(10, 83, 70, .80) 45%, rgba(4, 48, 42, .92));
+  }
+
+  /* The panels are now transparent layers stacked on that background. */
+  .auth-brand-panel,
+  .auth-form-panel {
+    position: relative;
+    z-index: 1;
+    background: none;
+  }
+
   .auth-brand-panel {
     order: -1;
-    padding: 26px 22px 24px;
+    padding: 26px 22px 20px;
     border-inline-start: none;
-    border-block-end: 1px solid var(--gold-border);
+    isolation: auto;
   }
 
+  /* The split owns the tint and the divider now. */
+  .auth-brand-overlay,
   .auth-brand-panel::after {
-    inset: auto 0 0;
-    width: auto;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    display: none;
   }
 
   .auth-brand-logo {
@@ -3453,26 +3481,43 @@ li {
   }
 
   .auth-brand-text {
-    margin-bottom: 18px;
+    margin-bottom: 16px;
     font-size: 14px;
     line-height: 1.8;
   }
 
   .auth-form-panel {
     overflow: visible;
-    padding: 30px 20px 44px;
-    background-image: radial-gradient(520px 260px at 50% 0%, rgba(199, 166, 107, .10), transparent 64%);
+    padding: 4px 20px 32px;
   }
 
+  /* The form becomes a card: a cream→white gradient lifted off the green,
+     which keeps every label, field and button on the light surface they
+     were designed for. */
   .auth-form-inner {
     max-width: 440px;
+    padding: 26px 20px 22px;
+    border: 1px solid var(--gold-border);
+    border-radius: var(--r-xl);
+    background:
+      linear-gradient(158deg, rgba(199, 166, 107, .13), transparent 46%),
+      linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 52%, var(--bg-tint) 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .7) inset,
+      0 20px 46px -20px rgba(4, 48, 42, .62),
+      0 4px 14px -8px rgba(4, 48, 42, .40);
+  }
+
+  /* On the cream card the fields need to stay the brightest surface. */
+  .auth-form-inner input {
+    background-color: var(--surface);
   }
 }
 
-/* Phones: the band drops to logo + badge so the form owns the screen. */
+/* Phones: the band drops to logo + badge so the card owns the screen. */
 @media (max-width: 620px) {
   .auth-brand-panel {
-    padding: 20px 18px 18px;
+    padding: 20px 18px 16px;
   }
 
   .auth-brand-logo {
@@ -3490,11 +3535,15 @@ li {
   }
 
   .auth-form-panel {
-    padding: 26px 18px 40px;
+    padding: 2px 18px 30px;
+  }
+
+  .auth-form-inner {
+    padding: 22px 17px 20px;
   }
 
   .auth-form-head {
-    margin-bottom: 20px;
+    margin-bottom: 18px;
   }
 
   .auth-eyebrow {
@@ -3522,17 +3571,17 @@ li {
   }
 
   .auth-footnote {
-    margin-top: 18px;
-    padding-top: 14px;
+    margin-top: 16px;
+    padding-top: 13px;
     font-size: 12.5px;
   }
 }
 
 /* Landscape phones: vertical space is the scarce axis — trim the band to
-   the logo alone. */
+   the logo alone and tighten the card. */
 @media (max-height: 560px) and (max-width: 900px) {
   .auth-brand-panel {
-    padding: 13px 18px 12px;
+    padding: 12px 18px 10px;
   }
 
   .auth-brand-logo {
@@ -3547,7 +3596,11 @@ li {
   }
 
   .auth-form-panel {
-    padding: 20px 20px 32px;
+    padding: 0 18px 26px;
+  }
+
+  .auth-form-inner {
+    padding: 18px 18px 16px;
   }
 
   /* The brand band already names the platform; in landscape the fields
