@@ -3815,6 +3815,76 @@ li {
   }
 }
 
+/* ── Table cards: value alignment & action rows (phones) ────────── */
+@media (max-width: 760px) {
+
+  /* `.ltr-text` sits on the CELL, so its `direction: ltr` reverses the
+     card row's grid tracks: the label jumps to the left edge while every
+     other row keeps it on the right. That mixed alignment is what makes
+     the list look ragged. Keep the row RTL so the label stays put, and let
+     `unicode-bidi: plaintext` give the value its own base direction — an
+     email still reads left-to-right, just aligned to its label. */
+  td.ltr-text {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: right;
+  }
+
+  td .ltr-text {
+    text-align: end;
+  }
+
+  /* Content-sized cells must not be squeezed into two lines by the
+     shrink-to-fit that keeps badges from stretching. */
+  td .pw-cell {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  /* The masked dots are decoration, not data — never let them wrap. */
+  td .pw-dots {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Equal-width actions instead of buttons sized by their label, which
+     left "عرض الكروت" wide, "تعطيل" narrow and "حذف" alone on a row. */
+  .row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .row-actions .btn-small {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    min-height: 40px;
+    padding-inline: 8px;
+  }
+
+  /* An odd trailing action spans the row rather than sitting half-width. */
+  .row-actions>*:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Labels sit on the first line of their value. Centring them against a
+     tall cell (three action buttons, a wrapped address) leaves the label
+     floating halfway down with nothing beside it. */
+  td {
+    align-items: start;
+  }
+
+  /* Badges and buttons are taller than the label text, so nudge the label
+     onto their optical centre line. */
+  td::before {
+    padding-top: 2px;
+  }
+}
+
 /* ── 20 · MOTION & PRINT ────────────────────────────────────────── */
 @keyframes spin {
   to {
