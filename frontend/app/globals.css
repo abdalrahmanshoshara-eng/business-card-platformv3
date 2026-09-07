@@ -28,6 +28,7 @@
      20  Motion & print
      21  Auth split (login screen)
      22  Auth splash (session check)
+     23  Mobile density (phones)
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 01 · DESIGN TOKENS ─────────────────────────────────────────── */
@@ -2971,6 +2972,9 @@ li {
     grid-template-columns: 100px minmax(0, 1fr);
     gap: 12px;
     align-items: center;
+    /* Size the value to its content: a status badge or a chip stretched
+       across the whole column reads as a broken control, not a label. */
+    justify-items: start;
     padding: 9px 0 !important;
     border-bottom: 1px solid var(--border);
     text-align: start;
@@ -3736,6 +3740,78 @@ li {
     width: 100%;
     background: var(--gold);
     opacity: .7;
+  }
+}
+
+/* ── 23 · MOBILE DENSITY (phones) ───────────────────────────────── */
+/* The generic "one field per row" phone rule is right for a form you fill
+   in, but the dashboard filter panel is EIGHT fields you mostly skim past
+   on the way to the table. Two-up keeps them all reachable without a
+   700px scroll, while the natural-language search — the primary one —
+   keeps the full width. */
+@media (max-width: 900px) {
+  .filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 10px;
+  }
+
+  .filters-grid>label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filters-grid label {
+    font-size: 13px;
+  }
+
+  /* Native date inputs need every pixel they can get at half width. */
+  .filters-grid input[type="date"] {
+    padding-inline: 10px;
+  }
+}
+
+/* Very narrow phones cannot hold two fields side by side legibly. */
+@media (max-width: 360px) {
+  .filters-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The results summary is four flex items that each claim their own line on
+   a phone — ~130px of chrome above an empty table. Two compact rows, and
+   the sort readout drops because the sort BUTTON sits directly above it. */
+@media (max-width: 620px) {
+  .results-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+
+  .results-summary>span {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .results-summary strong {
+    font-size: 14px;
+  }
+
+  .results-summary .results-sort-state {
+    display: none;
+  }
+
+  .results-summary .page-size-control {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+    padding-top: 9px;
+    border-top: 1px solid var(--border);
   }
 }
 

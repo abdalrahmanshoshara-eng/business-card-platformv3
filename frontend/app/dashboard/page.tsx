@@ -600,7 +600,7 @@ function DashboardPageInner() {
 
       <section className="card">
         <h2>البحث والتصفية</h2>
-        <div className="grid-3">
+        <div className="grid-3 filters-grid">
           <label>
             ابحث بالكلام الطبيعي
             <input
@@ -629,6 +629,14 @@ function DashboardPageInner() {
             />
           </label>
           <label>
+            من تاريخ
+            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
+          </label>
+          <label>
+            إلى تاريخ
+            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
+          </label>
+          <label>
             نوع الاستثمار
             <select
               value={investmentType}
@@ -641,14 +649,6 @@ function DashboardPageInner() {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            من تاريخ
-            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
-          </label>
-          <label>
-            إلى تاريخ
-            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
           </label>
           <label>
             الدولة
@@ -726,7 +726,7 @@ function DashboardPageInner() {
           <span>
             المعروض حالياً: <strong>{pageStart}-{pageEnd}</strong>
           </span>
-          <span>
+          <span className="results-sort-state">
             الترتيب الحالي: <strong>{sortOrder === "newest" ? "الأحدث أولاً" : "الأقدم أولاً"}</strong>
           </span>
           <label className="page-size-control">
