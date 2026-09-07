@@ -600,7 +600,7 @@ function DashboardPageInner() {
 
       <section className="card">
         <h2>البحث والتصفية</h2>
-        <div className="grid-3">
+        <div className="grid-3 filters-grid">
           <label>
             ابحث بالكلام الطبيعي
             <input
@@ -629,6 +629,14 @@ function DashboardPageInner() {
             />
           </label>
           <label>
+            من تاريخ
+            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
+          </label>
+          <label>
+            إلى تاريخ
+            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
+          </label>
+          <label>
             نوع الاستثمار
             <select
               value={investmentType}
@@ -641,14 +649,6 @@ function DashboardPageInner() {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            من تاريخ
-            <input type="date" value={createdFrom} onChange={(event) => { setPage(1); setCreatedFrom(event.target.value); }} />
-          </label>
-          <label>
-            إلى تاريخ
-            <input type="date" value={createdTo} onChange={(event) => { setPage(1); setCreatedTo(event.target.value); }} />
           </label>
           <label>
             الدولة
@@ -726,7 +726,7 @@ function DashboardPageInner() {
           <span>
             المعروض حالياً: <strong>{pageStart}-{pageEnd}</strong>
           </span>
-          <span>
+          <span className="results-sort-state">
             الترتيب الحالي: <strong>{sortOrder === "newest" ? "الأحدث أولاً" : "الأقدم أولاً"}</strong>
           </span>
           <label className="page-size-control">
@@ -774,7 +774,7 @@ function DashboardPageInner() {
                   </div>
                 </td>
                 {/* الشركة: الاسم + النشاط + نوع الاستثمار */}
-                <td data-label="الشركة والنشاط">
+                <td data-label="الشركة والنشاط" className="company-cell">
                   <div className="cell-stack">
                     <BilingualCell primary={card.company_name} ar={card.company_name_ar} en={card.company_name_en} />
                     {card.company_activity && (
@@ -786,7 +786,7 @@ function DashboardPageInner() {
                   </div>
                 </td>
                 {/* الاتصال: الموبايل + الإيميل + الموقع */}
-                <td data-label="بيانات الاتصال">
+                <td data-label="بيانات الاتصال" className="contact-cell">
                   <div className="cell-stack">
                     <PhoneList numbers={card.mobile_numbers} />
                     {(card.emails || []).length > 0 && (
@@ -795,12 +795,12 @@ function DashboardPageInner() {
                     {card.website && <span className="cell-sub ltr-text">{card.website}</span>}
                   </div>
                 </td>
-                <td data-label="الدولة">{card.country || "-"}</td>
-                <td data-label="تاريخ الإضافة" className="date-cell">
+                <td data-label="الدولة" className="meta-cell">{card.country || "-"}</td>
+                <td data-label="تاريخ الإضافة" className="date-cell meta-cell">
                   {(card.created_at || "").slice(0, 10) || "-"}
                 </td>
                 {/* الحالة + الترحيب */}
-                <td data-label="الحالة والترحيب">
+                <td data-label="الحالة والترحيب" className="status-cell">
                   <div className="cell-stack">
                     {card.needs_review ? (
                       <span className="badge warning">مراجعة</span>
@@ -839,7 +839,7 @@ function DashboardPageInner() {
                     )}
                   </div>
                 </td>
-                <td data-label="إجراءات">
+                <td data-label="إجراءات" className="actions-cell">
                   <div className="row-actions">
                     <button
                       type="button"

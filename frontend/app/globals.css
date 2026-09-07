@@ -26,6 +26,11 @@
      18  Utilities
      19  Responsive
      20  Motion & print
+     21  Auth split (login screen)
+     22  Auth splash (session check)
+     23  Mobile density (phones)
+     24  Designed table cards (phones)
+     25  Motion: extraction & results
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 01 · DESIGN TOKENS ─────────────────────────────────────────── */
@@ -2706,6 +2711,11 @@ li {
     bottom: 0;
     height: auto;
     min-height: 0;
+    /* The desktop rule's `align-self: flex-start` is a self-alignment on an
+       absolutely-positioned box: it shrink-wraps the drawer to its content
+       instead of letting top+bottom stretch it, leaving it hanging in the
+       middle of the screen. Stretch puts that back. */
+    align-self: stretch;
     width: min(84vw, 320px);
     max-width: 320px;
     padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
@@ -2719,6 +2729,8 @@ li {
     box-shadow: -14px 0 34px rgba(4, 48, 42, .38);
     z-index: 55;
     overflow-y: auto;
+    /* Scrolling the drawer must not chain to the page behind it. */
+    overscroll-behavior: contain;
   }
 
   .app-shell.sidebar-open .app-sidebar {
@@ -2732,8 +2744,24 @@ li {
     padding: 13px 14px;
   }
 
+  /* Pinned to the bottom of the drawer, away from the nav items, so it is
+     never mistaken for one more destination. */
   .app-sidebar-logout {
-    margin-top: 20px;
+    margin-top: auto;
+  }
+
+  /* On a short screen (landscape, small phones) the drawer must SCROLL, not
+     squeeze: the desktop rule's `flex: 1; min-height: 0` lets the nav shrink
+     below its content, which slides the last link under the logout button. */
+  .app-sidebar-user,
+  .app-sidebar-logout {
+    flex-shrink: 0;
+  }
+
+  .app-sidebar-nav {
+    flex: 0 0 auto;
+    min-height: auto;
+    gap: 4px;
   }
 }
 
@@ -2946,6 +2974,9 @@ li {
     grid-template-columns: 100px minmax(0, 1fr);
     gap: 12px;
     align-items: center;
+    /* Size the value to its content: a status badge or a chip stretched
+       across the whole column reads as a broken control, not a label. */
+    justify-items: start;
     padding: 9px 0 !important;
     border-bottom: 1px solid var(--border);
     text-align: start;
@@ -3172,6 +3203,1081 @@ li {
   .app-shell.sidebar-collapsed .sidebar-toggle svg,
   .app-shell.sidebar-closed .sidebar-toggle svg {
     transform: rotate(180deg);
+  }
+}
+
+/* ── 21 · AUTH SPLIT (login screen) ─────────────────────────────── */
+/* The login route owns the whole viewport as a two-column grid: the form on
+   the reading-start side, the ministry brand panel beside it. It is fixed to
+   the viewport so it clears `body { padding-top: var(--header-h) }` — the
+   global top bar is hidden on /login (SiteHeader) because the brand panel
+   already carries the logo. */
+.auth-split {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.04fr);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ── Form column ── */
+.auth-form-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 40px;
+  overflow-y: auto;
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(680px 340px at 90% -10%, rgba(199, 166, 107, .13), transparent 62%),
+    radial-gradient(560px 320px at 0% 100%, rgba(10, 83, 70, .08), transparent 60%);
+}
+
+.auth-form-inner {
+  width: 100%;
+  max-width: 408px;
+}
+
+.auth-form-head {
+  margin-bottom: 26px;
+}
+
+.auth-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  color: var(--gold-ink);
+  background: var(--gold-wash);
+  border: 1px solid var(--gold-border);
+  border-radius: var(--r-pill);
+  padding: 4px 13px;
+  margin-bottom: 14px;
+}
+
+.auth-form-head h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 30px);
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--green-deep);
+}
+
+.auth-form-head p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}
+
+/* Secondary actions under the fields (forgot password), pushed to the
+   inline-end edge so the primary button below stays the obvious path. */
+.auth-options {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* A link, not a button: opt out of the global button chrome (which is
+   full-width and 46px tall on phones) so it never reads as a second action
+   competing with «تسجيل الدخول». */
+.auth-link-btn {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--green-mid);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--gold-border);
+  text-underline-offset: 3px;
+  transition: color var(--fast) var(--ease), text-decoration-color var(--fast) var(--ease);
+}
+
+.auth-link-btn:hover:not(:disabled),
+.auth-link-btn:active:not(:disabled) {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+  color: var(--green-header);
+  text-decoration-color: var(--gold);
+}
+
+/* One action per row: this screen has a single primary path. */
+.auth-submit {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-footnote {
+  margin: 22px 0 0;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--text-soft);
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Brand column ── */
+.auth-brand-panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 48px;
+  background-color: var(--green-header);
+  background-image: url(/topbar-bg.jpg);
+  background-size: 520px;
+  background-position: center;
+  background-repeat: repeat;
+  background-blend-mode: soft-light;
+  border-inline-start: 1px solid var(--gold-border);
+}
+
+.auth-brand-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 86% at 76% 8%, rgba(199, 166, 107, .20), transparent 58%),
+    linear-gradient(200deg, rgba(4, 48, 42, .80), rgba(10, 83, 70, .78) 52%, rgba(4, 48, 42, .94));
+}
+
+/* Gold hairline along the divider edge, echoing the top bar. */
+.auth-brand-panel::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 2px;
+  background: linear-gradient(180deg, transparent, var(--gold), transparent);
+  opacity: .6;
+}
+
+.auth-brand-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+  color: #f7f3e8;
+}
+
+.auth-brand-logo {
+  width: min(310px, 80%);
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(4, 48, 42, .55));
+}
+
+.auth-brand-line {
+  width: 64px;
+  height: 3px;
+  margin: 26px auto 20px;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, rgba(199, 166, 107, 0), var(--gold), rgba(199, 166, 107, 0));
+}
+
+.auth-brand-title {
+  margin: 0 0 12px;
+  font-size: clamp(20px, 2.1vw, 27px);
+  font-weight: 800;
+  line-height: 1.4;
+  color: #fffaf0;
+}
+
+.auth-brand-text {
+  margin: 0 auto 26px;
+  max-width: 40ch;
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: rgba(247, 243, 232, .82);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+/* Below the split breakpoint the two panes stop being side-by-side columns
+   and become LAYERS: the green identity fills the whole screen as the
+   background, and the form rides on top of it inside its own gradient card.
+   Both panels go transparent and `.auth-split` itself carries the green, so
+   the logo sits directly on the background above the card.
+
+   It is also ordinary scrolling flow rather than a fixed overlay: mobile
+   browsers size `position: fixed` to the address-bar-hidden viewport, which
+   buries the submit button under the toolbar. The negative margin cancels
+   `body { padding-top: var(--header-h) }` — the top bar is hidden here. */
+@media (max-width: 900px) {
+  .auth-split {
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+    min-height: 100dvh;
+    margin-top: calc(-1 * var(--header-h));
+    overflow: visible;
+    background-color: var(--green-header);
+    background-image: url(/topbar-bg.jpg);
+    background-size: 520px;
+    background-position: center top;
+    background-repeat: repeat;
+    background-blend-mode: soft-light;
+    background-attachment: scroll;
+  }
+
+  /* Tint layer over the pattern, so the logo and the card edge both read. */
+  .auth-split::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgba(199, 166, 107, .20), transparent 60%),
+      linear-gradient(180deg, rgba(4, 48, 42, .74), rgba(10, 83, 70, .80) 45%, rgba(4, 48, 42, .92));
+  }
+
+  /* The panels are now transparent layers stacked on that background. */
+  .auth-brand-panel,
+  .auth-form-panel {
+    position: relative;
+    z-index: 1;
+    background: none;
+  }
+
+  .auth-brand-panel {
+    order: -1;
+    padding: 26px 22px 20px;
+    border-inline-start: none;
+    isolation: auto;
+  }
+
+  /* The split owns the tint and the divider now. */
+  .auth-brand-overlay,
+  .auth-brand-panel::after {
+    display: none;
+  }
+
+  .auth-brand-logo {
+    width: min(215px, 62%);
+  }
+
+  .auth-brand-line {
+    margin: 16px auto 12px;
+    width: 52px;
+  }
+
+  .auth-brand-title {
+    font-size: 19px;
+    margin-bottom: 10px;
+  }
+
+  .auth-brand-text {
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.8;
+  }
+
+  .auth-form-panel {
+    overflow: visible;
+    padding: 4px 20px 32px;
+  }
+
+  /* The form becomes a card: a cream→white gradient lifted off the green,
+     which keeps every label, field and button on the light surface they
+     were designed for. */
+  .auth-form-inner {
+    max-width: 440px;
+    padding: 26px 20px 22px;
+    border: 1px solid var(--gold-border);
+    border-radius: var(--r-xl);
+    background:
+      linear-gradient(158deg, rgba(199, 166, 107, .13), transparent 46%),
+      linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 52%, var(--bg-tint) 100%);
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, .7) inset,
+      0 20px 46px -20px rgba(4, 48, 42, .62),
+      0 4px 14px -8px rgba(4, 48, 42, .40);
+  }
+
+  /* On the cream card the fields need to stay the brightest surface. */
+  .auth-form-inner input {
+    background-color: var(--surface);
+  }
+}
+
+/* Phones: the band drops to logo + badge so the card owns the screen. */
+@media (max-width: 620px) {
+  .auth-brand-panel {
+    padding: 20px 18px 16px;
+  }
+
+  .auth-brand-logo {
+    width: min(185px, 56%);
+  }
+
+  .auth-brand-line {
+    margin: 14px auto 12px;
+    width: 44px;
+  }
+
+  .auth-brand-title,
+  .auth-brand-text {
+    display: none;
+  }
+
+  .auth-form-panel {
+    padding: 2px 18px 30px;
+  }
+
+  .auth-form-inner {
+    padding: 22px 17px 20px;
+  }
+
+  .auth-form-head {
+    margin-bottom: 18px;
+  }
+
+  .auth-eyebrow {
+    font-size: 11.5px;
+    padding: 3px 11px;
+    margin-bottom: 11px;
+  }
+
+  .auth-form-head h1 {
+    font-size: 23px;
+  }
+
+  .auth-form-head .hero-accent-line {
+    margin: 10px 0 11px;
+  }
+
+  .auth-form-head p {
+    font-size: 13.5px;
+    line-height: 1.75;
+  }
+
+  .auth-options {
+    justify-content: flex-start;
+    margin-top: 8px;
+  }
+
+  .auth-footnote {
+    margin-top: 16px;
+    padding-top: 13px;
+    font-size: 12.5px;
+  }
+}
+
+/* Landscape phones: vertical space is the scarce axis — trim the band to
+   the logo alone and tighten the card. */
+@media (max-height: 560px) and (max-width: 900px) {
+  .auth-brand-panel {
+    padding: 12px 18px 10px;
+  }
+
+  .auth-brand-logo {
+    width: min(150px, 40%);
+  }
+
+  .auth-brand-line,
+  .auth-brand-badge,
+  .auth-brand-title,
+  .auth-brand-text {
+    display: none;
+  }
+
+  .auth-form-panel {
+    padding: 0 18px 26px;
+  }
+
+  .auth-form-inner {
+    padding: 18px 18px 16px;
+  }
+
+  /* The brand band already names the platform; in landscape the fields
+     matter more than the preamble. */
+  .auth-eyebrow,
+  .auth-form-head p {
+    display: none;
+  }
+
+  .auth-form-head {
+    margin-bottom: 14px;
+  }
+
+  .auth-form-head h1 {
+    font-size: 21px;
+  }
+
+  .auth-form-head .hero-accent-line {
+    margin: 8px 0 0;
+  }
+
+  .auth-footnote {
+    margin-top: 16px;
+    padding-top: 12px;
+  }
+}
+
+/* ── 22 · AUTH SPLASH (session check / redirect) ────────────────── */
+/* Rendered by RequireAuth while auth resolves. It covers the top bar too —
+   the splash carries the logo itself — so the wait reads as one continuous
+   branded moment rather than a half-drawn page. */
+.auth-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--green-header);
+  background-image: url(/topbar-bg.jpg);
+  background-size: 520px;
+  background-position: center;
+  background-repeat: repeat;
+  background-blend-mode: soft-light;
+}
+
+.auth-splash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% 0%, rgba(199, 166, 107, .20), transparent 60%),
+    linear-gradient(180deg, rgba(4, 48, 42, .78), rgba(10, 83, 70, .80) 45%, rgba(4, 48, 42, .93));
+}
+
+.auth-splash-inner {
+  width: 100%;
+  max-width: 340px;
+  text-align: center;
+  color: #f7f3e8;
+}
+
+.auth-splash-logo {
+  width: min(260px, 72%);
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(4, 48, 42, .55));
+}
+
+/* Indeterminate progress: a gold sweep in a hairline track. */
+.auth-splash-bar {
+  position: relative;
+  width: min(180px, 60%);
+  height: 3px;
+  margin: 28px auto 18px;
+  border-radius: var(--r-pill);
+  background: rgba(199, 166, 107, .20);
+  overflow: hidden;
+}
+
+.auth-splash-bar span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 40%;
+  border-radius: var(--r-pill);
+  background: linear-gradient(90deg, rgba(199, 166, 107, 0), var(--gold), rgba(199, 166, 107, 0));
+  animation: authSplashSweep 1.15s var(--ease) infinite;
+}
+
+@keyframes authSplashSweep {
+  from {
+    transform: translateX(-120%);
+  }
+
+  to {
+    transform: translateX(370%);
+  }
+}
+
+.auth-splash-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.8;
+  color: rgba(247, 243, 232, .82);
+}
+
+@media (max-width: 620px) {
+  .auth-splash-logo {
+    width: min(210px, 64%);
+  }
+
+  .auth-splash-bar {
+    margin: 22px auto 14px;
+  }
+
+  .auth-splash-text {
+    font-size: 13.5px;
+  }
+}
+
+/* Reduced motion: the global rule collapses the sweep, so show a static
+   filled track instead of a frozen sliver. */
+@media (prefers-reduced-motion: reduce) {
+  .auth-splash-bar span {
+    width: 100%;
+    background: var(--gold);
+    opacity: .7;
+  }
+}
+
+/* ── 23 · MOBILE DENSITY (phones) ───────────────────────────────── */
+/* The generic "one field per row" phone rule is right for a form you fill
+   in, but the dashboard filter panel is EIGHT fields you mostly skim past
+   on the way to the table. Two-up keeps them all reachable without a
+   700px scroll, while the natural-language search — the primary one —
+   keeps the full width. */
+@media (max-width: 900px) {
+  .filters-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 10px;
+  }
+
+  .filters-grid>label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filters-grid label {
+    font-size: 13px;
+  }
+
+  /* Native date inputs need every pixel they can get at half width. */
+  .filters-grid input[type="date"] {
+    padding-inline: 10px;
+  }
+}
+
+/* Very narrow phones cannot hold two fields side by side legibly. */
+@media (max-width: 360px) {
+  .filters-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The results summary is four flex items that each claim their own line on
+   a phone — ~130px of chrome above an empty table. Two compact rows, and
+   the sort readout drops because the sort BUTTON sits directly above it. */
+@media (max-width: 620px) {
+  .results-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: 8px 10px;
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+
+  .results-summary>span {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .results-summary strong {
+    font-size: 14px;
+  }
+
+  .results-summary .results-sort-state {
+    display: none;
+  }
+
+  .results-summary .page-size-control {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+    padding-top: 9px;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ── Table cards: value alignment & action rows (phones) ────────── */
+@media (max-width: 760px) {
+
+  /* `.ltr-text` sits on the CELL, so its `direction: ltr` reverses the
+     card row's grid tracks: the label jumps to the left edge while every
+     other row keeps it on the right. That mixed alignment is what makes
+     the list look ragged. Keep the row RTL so the label stays put, and let
+     `unicode-bidi: plaintext` give the value its own base direction — an
+     email still reads left-to-right, just aligned to its label. */
+  td.ltr-text {
+    direction: rtl;
+    unicode-bidi: plaintext;
+    text-align: right;
+  }
+
+  td .ltr-text {
+    text-align: end;
+  }
+
+  /* Content-sized cells must not be squeezed into two lines by the
+     shrink-to-fit that keeps badges from stretching. */
+  td .pw-cell {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  /* The masked dots are decoration, not data — never let them wrap. */
+  td .pw-dots {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* Equal-width actions instead of buttons sized by their label, which
+     left "عرض الكروت" wide, "تعطيل" narrow and "حذف" alone on a row. */
+  .row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .row-actions .btn-small {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+    min-height: 40px;
+    padding-inline: 8px;
+  }
+
+  /* An odd trailing action spans the row rather than sitting half-width. */
+  .row-actions>*:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* `.section-head-actions` is `flex: 0 0 auto` with the default
+     `min-width: auto`, so it cannot shrink below the min-content width of
+     the button inside it. With `white-space: nowrap` on `.btn-add` plus its
+     padding, that min-content is wider than the card's content box and the
+     button spills past the inner edge. On a phone the actions belong on
+     their own full-width row anyway, where they can shrink. */
+  .section-head-actions {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .section-head-actions .btn-add {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    /* Wrap rather than overflow if the label ever grows. */
+    white-space: normal;
+  }
+
+  /* Labels sit on the first line of their value. Centring them against a
+     tall cell (three action buttons, a wrapped address) leaves the label
+     floating halfway down with nothing beside it. */
+  td {
+    align-items: start;
+  }
+
+  /* Badges and buttons are taller than the label text, so nudge the label
+     onto their optical centre line. */
+  td::before {
+    padding-top: 2px;
+  }
+}
+
+/* ── 24 · DESIGNED TABLE CARDS (phones) ─────────────────────────── */
+/* The generic transposition below 760px turns every column into a
+   "label: value" row, which is safe but flat — a person's name carries the
+   same weight as the date they were added. These rules re-compose the same
+   cells into an actual card: a titled header, a body, a quiet metadata
+   strip and an action footer. No duplicated markup and no duplicated
+   handlers — only the arrangement changes. */
+@media (max-width: 760px) {
+
+  /* The row is the card; its cells manage their own padding. */
+  tbody tr,
+  tbody tr:nth-child(even) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  tbody td {
+    grid-column: 1 / -1;
+    padding: 11px 14px !important;
+  }
+
+  /* ── Card header: the identifying cell, no label, no divider above ── */
+  td.primary-cell {
+    display: block;
+    padding: 13px 14px 12px !important;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--green-wash), transparent);
+  }
+
+  td.primary-cell::before {
+    display: none;
+  }
+
+  /* Header layout: name and job title stacked, sequence badge parked in the
+     opposite corner. `.cell-stack` is a flex column, so a float on the badge
+     is ignored — it needs an explicit grid slot to leave its own line. */
+  td.primary-cell>.cell-stack {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 2px 10px;
+  }
+
+  td.primary-cell>.cell-stack>.bilingual-cell {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  td.primary-cell>.cell-stack>.cell-sub {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  /* The record's name — the one thing you scan for. The job title below it
+     is wrapped in `.cell-sub`, so this only hits the name itself. */
+  td.primary-cell>.cell-stack>.bilingual-cell .bilingual-ar,
+  td.primary-cell>.cell-stack>.bilingual-cell .bilingual-en {
+    font-size: 16.5px;
+    font-weight: 800;
+    color: var(--green-deep);
+    line-height: 1.4;
+  }
+
+  td.primary-cell .cell-sub {
+    font-size: 13px;
+  }
+
+  td.primary-cell>.cell-stack>.seq-badge {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  /* Users table: the username is the title. */
+  .users-table td.primary-cell {
+    font-size: 16.5px;
+    font-weight: 800;
+    color: var(--green-deep);
+    text-align: start;
+  }
+
+  /* ── Body cells: values speak for themselves, labels only where the
+        value would be ambiguous without one. ── */
+  td.company-cell,
+  td.contact-cell,
+  td.status-cell,
+  td.actions-cell {
+    display: block;
+  }
+
+  td.company-cell::before,
+  td.contact-cell::before,
+  td.status-cell::before,
+  td.actions-cell::before {
+    display: none;
+  }
+
+  td.company-cell {
+    border-bottom: 1px solid var(--border);
+  }
+
+  td.company-cell>.cell-stack>.bilingual-cell .bilingual-ar,
+  td.company-cell>.cell-stack>.bilingual-cell .bilingual-en {
+    font-weight: 700;
+    font-size: 14.5px;
+    color: var(--text);
+  }
+
+  td.contact-cell {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+
+  td.contact-cell .cell-sub {
+    font-size: 13px;
+  }
+
+  /* ── Metadata strip: two quiet facts side by side, labelled inline. ── */
+  td.meta-cell {
+    grid-column: span 1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 9px 14px !important;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  td.meta-cell::before {
+    display: inline;
+    padding-top: 0;
+    font-size: 11.5px;
+    white-space: nowrap;
+  }
+
+  /* Divider between the two meta facts. It belongs on the SECOND cell's
+     inline-start — the edge that faces the first cell — which is its right
+     edge in RTL; inline-end would draw it on the card's outer edge. */
+  td.meta-cell+td.meta-cell {
+    border-inline-start: 1px solid var(--border);
+  }
+
+  /* ── Status + actions footer ── */
+  td.status-cell {
+    padding-bottom: 4px !important;
+  }
+
+  /* Status badge and the welcome action read as one line, not a stack. */
+  td.status-cell>.cell-stack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  td.actions-cell {
+    padding-top: 8px !important;
+    padding-bottom: 13px !important;
+  }
+
+  /* The generic rule draws a divider under every cell; the card's own
+     sections already provide them. */
+  tbody tr td:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* ── 25 · MOTION: EXTRACTION & RESULTS ──────────────────────────── */
+/* Three moments in the upload flow: the wait while Gemini reads the card,
+   the fields arriving, and the record being banked. All three inherit the
+   global `prefers-reduced-motion` kill switch in section 20. */
+
+/* ── The card being read ────────────────────────────────────────── */
+.card-scan {
+  position: relative;
+  overflow: hidden;
+  margin: 10px 0 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  line-height: 0;
+}
+
+.card-scan img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 190px;
+  object-fit: cover;
+  transition: filter var(--base) var(--ease), transform var(--slow) var(--ease);
+}
+
+/* Idle: just a thumbnail. Scanning: cooled slightly so the gold sweep and
+   the grid overlay read as machine-reading rather than decoration. */
+.card-scan[data-scanning="true"] {
+  border-color: var(--gold-border);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+/* Cool the photo down hard while scanning: business cards are usually white,
+   and a gold sweep over a white card is invisible without the contrast. */
+.card-scan[data-scanning="true"] img {
+  filter: saturate(.55) contrast(1.06) brightness(.72);
+}
+
+.card-scan-line {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 34%;
+  opacity: 0;
+  pointer-events: none;
+  /* A bright edge with a short glow trailing behind it. */
+  background:
+    linear-gradient(180deg, rgba(199, 166, 107, 0) 0%, rgba(199, 166, 107, .28) 68%, rgba(233, 213, 168, .72) 92%, rgba(255, 252, 245, .95) 100%);
+  border-bottom: 2px solid #fffdf6;
+  box-shadow: 0 0 10px 2px rgba(233, 213, 168, .9), 0 3px 22px 4px rgba(199, 166, 107, .7);
+}
+
+.card-scan[data-scanning="true"] .card-scan-line {
+  opacity: 1;
+  animation: cardScanSweep 1.9s cubic-bezier(.55, 0, .45, 1) infinite;
+}
+
+@keyframes cardScanSweep {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  /* A beat at the bottom before the next pass, so it reads as repeated
+     passes rather than a spinning loop. */
+  82%,
+  100% {
+    transform: translateY(300%);
+  }
+}
+
+/* ── Extracted fields arriving ──────────────────────────────────── */
+/* The whole block mounts at once when the response lands; staggering the
+   fields makes it read as the form being filled in, field by field. */
+.fields-reveal>label {
+  animation: fieldReveal 340ms var(--ease-out) both;
+}
+
+.fields-reveal>label:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.fields-reveal>label:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.fields-reveal>label:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.fields-reveal>label:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.fields-reveal>label:nth-child(5) {
+  animation-delay: 180ms;
+}
+
+.fields-reveal>label:nth-child(6) {
+  animation-delay: 225ms;
+}
+
+.fields-reveal>label:nth-child(7) {
+  animation-delay: 270ms;
+}
+
+.fields-reveal>label:nth-child(8) {
+  animation-delay: 315ms;
+}
+
+.fields-reveal>label:nth-child(9) {
+  animation-delay: 360ms;
+}
+
+/* Past nine the cascade stops earning its keep — the rest land together. */
+.fields-reveal>label:nth-child(n+10) {
+  animation-delay: 400ms;
+}
+
+@keyframes fieldReveal {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── The record being banked: the step tick draws itself ────────── */
+/* Two strokes growing out of the corner where they meet, instead of a ✓
+   glyph appearing all at once. */
+.step.done .step-dot::before {
+  content: "";
+}
+
+.step.done .step-dot::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  border-end-end-radius: 1px;
+  transform: rotate(45deg);
+  transform-origin: 100% 100%;
+  animation: stepCheckDraw 300ms var(--ease-out) both;
+}
+
+@keyframes stepCheckDraw {
+  0% {
+    width: 0;
+    height: 0;
+  }
+
+  45% {
+    width: 5px;
+    height: 0;
+  }
+
+  100% {
+    width: 5px;
+    height: 9px;
+  }
+}
+
+/* Reduced motion means NO animation, not an instant one. Section 20's global
+   kill switch only shortens durations, which can leave an animation's `from`
+   state on screen — extracted fields stuck at `opacity: 0`, a tick drawn to
+   zero, a sweep parked off the bottom of the card. Cancel the animations and
+   state each finished form outright. */
+@media (prefers-reduced-motion: reduce) {
+
+  /* A static gold rule along the bottom edge: still says "being read". */
+  .card-scan[data-scanning="true"] .card-scan-line {
+    animation: none;
+    transform: none;
+    top: auto;
+    bottom: 0;
+    height: 3px;
+    background: var(--gold);
+    border-bottom: 0;
+    box-shadow: none;
+  }
+
+  /* Fields appear at once, fully visible. */
+  .fields-reveal>label {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The tick is simply there, fully drawn. */
+  .step.done .step-dot::after {
+    animation: none;
+    width: 5px;
+    height: 9px;
   }
 }
 

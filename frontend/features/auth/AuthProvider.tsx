@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { AuthUser, getMe, login as apiLogin, logout as apiLogout, isAdmin as computeIsAdmin } from './api';
 
 type AuthState = {
@@ -16,6 +16,14 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 const CACHE_KEY = 'bcp_auth_user';
+
+/* The cached user must be applied BEFORE the browser paints, otherwise the
+   session-check splash flashes once more after hydration. `useLayoutEffect`
+   does that but warns when React renders this on the server, so fall back to
+   `useEffect` there (where it never runs anyway). Seeding the initial state
+   from localStorage instead is not an option: the server cannot read it, and
+   the two renders would not match. */
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 function readCachedUser(): AuthUser | null {
   if (typeof window === 'undefined') return null;
@@ -49,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // 1) Instant hydrate from the last known user so reloads render immediately
   //    (no blank/loading flash and no login-redirect flicker).
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     const cached = readCachedUser();
     if (cached) {
       setUserState(cached);

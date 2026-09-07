@@ -72,15 +72,18 @@ else:
 
 ```
 frontend/
-├── app/            # صفحات فقط: login, register, profile, admin/users, dashboard, upload
+├── app/            # صفحات فقط: login, profile, admin/users, dashboard, upload
 ├── features/
 │   ├── auth/       # api.ts, AuthProvider.tsx (useAuth), Guard.tsx (RequireAuth)
 │   └── users/      # api.ts لإدارة المستخدمين
 ├── lib/            # api.ts (fetchJson + CSRF + credentials)
-└── components/     # PageHero, UserMenu, ...
+└── components/     # SiteHeader, PageHero, UserMenu, ...
 ```
 
 - الصفحات تركّب المكونات فقط؛ منطق المصادقة في `features/auth`.
+- **لا يوجد تسجيل ذاتي**: صفحة `register` أُزيلت والحسابات يُنشئها المشرف. Endpoint الـBackend ما زال موجوداً لكنه مغلق بـ`PUBLIC_REGISTRATION_ENABLED=false`.
+- `/login` شاشة كاملة بعمودين (نموذج + لوحة هوية تحمل الشعار)؛ لذلك `SiteHeader` يُخفي الشريط العلوي على هذا المسار فقط (`BARE_ROUTES`). أنماطها في القسم 21 من `globals.css`.
+- **الجداول على الموبايل**: تحت 760px يتحوّل كل `table` إلى بطاقات (`thead` يُخفى و`td::before` يأخذ `data-label`). الأقسام 23 و24 في `globals.css` تعيد تركيب الخلايا كبطاقة حقيقية (ترويسة، جسم، شريط بيانات، أزرار) عبر أصناف على الخلايا: `primary-cell`, `company-cell`, `contact-cell`, `meta-cell`, `status-cell`, `actions-cell`. لا يوجد Markup مكرر: نفس الجدول ونفس المعالجات، التنسيق فقط يتغيّر.
 - طلبات API تمر عبر `lib/api.ts` (يرسل الكوكيز و`X-CSRFToken`).
 - الحماية عبر `RequireAuth`/`RequireAuth admin` مع حالة تحميل وإعادة توجيه. الحماية الأساسية في الـBackend.
 - **ممنوع** تخزين بيانات المصادقة في `localStorage/sessionStorage`.

@@ -184,7 +184,7 @@ function AdminUsersInner() {
                     </td>
                     <td data-label="الكروت">{u.card_count}</td>
                     <td data-label="كلمة المرور"><PasswordEditor user={u} /></td>
-                    <td data-label="إجراءات">
+                    <td data-label="إجراءات" className="actions-cell">
                       <div className="row-actions">
                         <Link href={`/admin/users/${u.id}`} className="btn-small btn-gold">عرض الكروت</Link>
                         <button type="button" className="btn-small" onClick={() => toggleActive(u)}>

@@ -66,24 +66,6 @@ export async function logout(): Promise<void> {
   await fetchJson('/auth/logout', { method: 'POST' });
 }
 
-export type RegisterPayload = {
-  username: string;
-  email: string;
-  password: string;
-  password_confirm: string;
-  first_name: string;
-  last_name: string;
-};
-
-export async function register(payload: RegisterPayload): Promise<AuthUser> {
-  await ensureCsrf();
-  return fetchJson<AuthUser>('/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-}
-
 export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'email' | 'phone'>> & WelcomeEmailUpdate): Promise<AuthUser> {
   return fetchJson<AuthUser>('/auth/profile', {
     method: 'PATCH',

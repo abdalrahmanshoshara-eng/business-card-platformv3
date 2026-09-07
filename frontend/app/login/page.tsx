@@ -1,9 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { forgotPassword } from '@/features/auth/api';
@@ -20,7 +18,6 @@ export default function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [forgotMode, setForgotMode] = useState(false);
@@ -44,10 +41,11 @@ export default function LoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await login(username.trim(), password, remember);
+      // No "remember me" control: every login persists for the full session
+      // lifetime, which is what the checkbox defaulted to.
+      await login(username.trim(), password, true);
       try {
-        if (remember) window.localStorage.setItem('bcp_last_username', username.trim());
-        else window.localStorage.removeItem('bcp_last_username');
+        window.localStorage.setItem('bcp_last_username', username.trim());
       } catch {
         /* ignore */
       }
@@ -74,60 +72,91 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="container">
-      <PageHero title="تسجيل الدخول" description="أدخل اسم المستخدم أو البريد الإلكتروني وكلمة المرور للوصول إلى حسابك." />
-
-      <div className="card" style={{ maxWidth: 480, margin: '0 auto' }}>
-        {!forgotMode ? (
-          <form onSubmit={submit}>
-            <label htmlFor="username">اسم المستخدم أو البريد الإلكتروني</label>
-            <input id="username" type="text" autoComplete="username" value={username}
-              onChange={(e) => setUsername(e.target.value)} required />
-
-            <label htmlFor="password">كلمة المرور</label>
-            <input id="password" type="password" autoComplete="current-password" value={password}
-              onChange={(e) => setPassword(e.target.value)} required />
-
-            {error && <div className="status-box error" style={{ marginTop: 12 }}>{error}</div>}
-
-            <label className="check-row" style={{ marginTop: 14 }}>
-              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              تذكّرني على هذا الجهاز
-            </label>
-
-            <div className="button-row">
-              <button type="submit" className="btn btn-gold" disabled={submitting}>
-                {submitting ? 'جارٍ الدخول…' : 'تسجيل الدخول'}
-              </button>
-            </div>
-
-            <p className="helper-text" style={{ marginTop: 16 }}>
-              لا تملك حساباً؟ <Link href="/register">إنشاء حساب</Link>
+    <main className="auth-split">
+      {/* Form column — first in the DOM so keyboard and screen readers reach it
+          immediately; RTL places it on the reading-start (right) side. */}
+      <section className="auth-form-panel">
+        <div className="auth-form-inner">
+          <div className="auth-form-head">
+            <span className="auth-eyebrow">منصة الكروت الشخصية</span>
+            <h1>{forgotMode ? 'استعادة كلمة المرور' : 'تسجيل الدخول'}</h1>
+            <div className="hero-accent-line" />
+            <p>
+              {forgotMode
+                ? 'أدخل اسم المستخدم أو البريد الإلكتروني وسنرسل لك رابط إعادة التعيين.'
+                : 'أدخل اسم المستخدم أو البريد الإلكتروني وكلمة المرور للوصول إلى حسابك.'}
             </p>
-          </form>
-        ) : (
-          <form onSubmit={submitForgot}>
-            {forgotDone ? (
-              <div className="status-box success">إذا كان الحساب موجوداً فسيتم إرسال رابط إعادة التعيين.</div>
-            ) : (
-              <>
-                <label htmlFor="forgot">اسم المستخدم أو البريد الإلكتروني</label>
-                <input id="forgot" type="text" value={username} onChange={(e) => setUsername(e.target.value)} required />
-              </>
-            )}
-            <div className="button-row">
-              {!forgotDone && (
-                <button type="submit" className="btn btn-gold" disabled={submitting}>
-                  {submitting ? 'جارٍ الإرسال…' : 'إرسال رابط إعادة التعيين'}
+          </div>
+
+          {!forgotMode ? (
+            <form onSubmit={submit}>
+              <label htmlFor="username">اسم المستخدم أو البريد الإلكتروني</label>
+              <input id="username" type="text" autoComplete="username" value={username}
+                onChange={(e) => setUsername(e.target.value)} required />
+
+              <label htmlFor="password">كلمة المرور</label>
+              <input id="password" type="password" autoComplete="current-password" value={password}
+                onChange={(e) => setPassword(e.target.value)} required />
+
+              {error && <div className="status-box error" style={{ marginTop: 12 }}>{error}</div>}
+
+              <div className="auth-options">
+                <button type="button" className="auth-link-btn"
+                  onClick={() => { setForgotMode(true); setError(''); }}>
+                  نسيت كلمة المرور؟
                 </button>
+              </div>
+
+              <div className="button-row">
+                <button type="submit" className="btn btn-gold auth-submit" disabled={submitting}>
+                  {submitting ? 'جارٍ الدخول…' : 'تسجيل الدخول'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={submitForgot}>
+              {forgotDone ? (
+                <div className="status-box success">إذا كان الحساب موجوداً فسيتم إرسال رابط إعادة التعيين.</div>
+              ) : (
+                <>
+                  <label htmlFor="forgot">اسم المستخدم أو البريد الإلكتروني</label>
+                  <input id="forgot" type="text" value={username} onChange={(e) => setUsername(e.target.value)} required />
+                </>
               )}
-              <button type="button" className="btn secondary" onClick={() => { setForgotMode(false); setForgotDone(false); }}>
-                العودة لتسجيل الدخول
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
+              <div className="button-row">
+                {!forgotDone && (
+                  <button type="submit" className="btn btn-gold auth-submit" disabled={submitting}>
+                    {submitting ? 'جارٍ الإرسال…' : 'إرسال رابط إعادة التعيين'}
+                  </button>
+                )}
+                <button type="button" className="btn secondary auth-submit"
+                  onClick={() => { setForgotMode(false); setForgotDone(false); setError(''); }}>
+                  العودة لتسجيل الدخول
+                </button>
+              </div>
+            </form>
+          )}
+
+          <p className="auth-footnote">
+            الحسابات تُنشأ من قبل مشرف المنصة. للحصول على حساب يرجى التواصل مع الإدارة.
+          </p>
+        </div>
+      </section>
+
+      {/* Brand column — carries the ministry logo, so the global top bar is
+          hidden on this route (see SiteHeader). */}
+      <aside className="auth-brand-panel">
+        <div className="auth-brand-overlay" aria-hidden="true" />
+        <div className="auth-brand-inner">
+          <img className="auth-brand-logo" src="/header-logo-ar.png" alt="وزارة الاقتصاد والصناعة" />
+          <div className="auth-brand-line" aria-hidden="true" />
+          <h2 className="auth-brand-title">منصة إدارة الكروت الشخصية</h2>
+          <p className="auth-brand-text">
+            أرشفة الكروت الشخصية واستخراج بياناتها آلياً، والبحث فيها وإدارتها من مكان واحد.
+          </p>
+          <span className="header-badge auth-brand-badge">الجمهورية العربية السورية</span>
+        </div>
+      </aside>
     </main>
   );
 }
