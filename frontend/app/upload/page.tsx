@@ -96,6 +96,8 @@ function UploadPageInner() {
   // Thumbnails of the chosen files, so the extraction sweep has something to
   // read and the user can confirm they picked the right photo. Object URLs are
   // revoked whenever the file changes, and on unmount.
+  const frontScanRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLElement>(null);
   const [frontUrl, setFrontUrl] = useState<string | null>(null);
   const [backUrl, setBackUrl] = useState<string | null>(null);
 
@@ -117,8 +119,25 @@ function UploadPageInner() {
   // works on them — the two steps the user waits through.
   const scanning = loading && (currentStep === 'upload' || currentStep === 'extract');
 
+
   const previewData = useMemo(() => savedCard || duplicate?.existing_card || null, [savedCard, duplicate]);
   const reviewFields = useMemo(() => previewData?.review_fields || [], [previewData]);
+  function scrollToRef(ref: React.RefObject<HTMLElement>, block: ScrollLogicalPosition) {
+    const reduce = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block });
+  }
+
+  // Reading the card: show the card being read.
+  useEffect(() => {
+    if (scanning) scrollToRef(frontScanRef, 'center');
+  }, [scanning]);
+
+  // Result ready: show the extracted fields as they land.
+  useEffect(() => {
+    if (previewData) scrollToRef(resultRef, 'start');
+  }, [previewData]);
+
 
   function resetIdempotencyKey() {
     idempotencyKeyRef.current = null;
@@ -318,7 +337,7 @@ function UploadPageInner() {
                 </button>
               </div>
               {frontUrl && (
-                <div className="card-scan" data-scanning={scanning ? 'true' : 'false'}>
+                <div ref={frontScanRef} className="card-scan" data-scanning={scanning ? 'true' : 'false'}>
                   <img src={frontUrl} alt="" />
                   <span className="card-scan-line" aria-hidden="true" />
                 </div>
@@ -408,7 +427,7 @@ function UploadPageInner() {
       </section>
 
       {previewData && (
-        <section className="card">
+        <section ref={resultRef} className="card">
           <div className="section-head">
             <h2>{duplicate ? 'الكرت موجود سابقًا' : 'تم حفظ الكرت بنجاح'}</h2>
             <span className={duplicate ? 'badge warning' : 'badge success'}>
