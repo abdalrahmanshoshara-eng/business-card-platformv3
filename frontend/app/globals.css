@@ -30,6 +30,7 @@
      22  Auth splash (session check)
      23  Mobile density (phones)
      24  Designed table cards (phones)
+     25  Motion: extraction & results
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── 01 · DESIGN TOKENS ─────────────────────────────────────────── */
@@ -4074,6 +4075,209 @@ li {
      sections already provide them. */
   tbody tr td:last-child {
     border-bottom: 0;
+  }
+}
+
+/* ── 25 · MOTION: EXTRACTION & RESULTS ──────────────────────────── */
+/* Three moments in the upload flow: the wait while Gemini reads the card,
+   the fields arriving, and the record being banked. All three inherit the
+   global `prefers-reduced-motion` kill switch in section 20. */
+
+/* ── The card being read ────────────────────────────────────────── */
+.card-scan {
+  position: relative;
+  overflow: hidden;
+  margin: 10px 0 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-sunken);
+  line-height: 0;
+}
+
+.card-scan img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 190px;
+  object-fit: cover;
+  transition: filter var(--base) var(--ease), transform var(--slow) var(--ease);
+}
+
+/* Idle: just a thumbnail. Scanning: cooled slightly so the gold sweep and
+   the grid overlay read as machine-reading rather than decoration. */
+.card-scan[data-scanning="true"] {
+  border-color: var(--gold-border);
+  box-shadow: 0 0 0 3px var(--gold-glow);
+}
+
+/* Cool the photo down hard while scanning: business cards are usually white,
+   and a gold sweep over a white card is invisible without the contrast. */
+.card-scan[data-scanning="true"] img {
+  filter: saturate(.55) contrast(1.06) brightness(.72);
+}
+
+.card-scan-line {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 34%;
+  opacity: 0;
+  pointer-events: none;
+  /* A bright edge with a short glow trailing behind it. */
+  background:
+    linear-gradient(180deg, rgba(199, 166, 107, 0) 0%, rgba(199, 166, 107, .28) 68%, rgba(233, 213, 168, .72) 92%, rgba(255, 252, 245, .95) 100%);
+  border-bottom: 2px solid #fffdf6;
+  box-shadow: 0 0 10px 2px rgba(233, 213, 168, .9), 0 3px 22px 4px rgba(199, 166, 107, .7);
+}
+
+.card-scan[data-scanning="true"] .card-scan-line {
+  opacity: 1;
+  animation: cardScanSweep 1.9s cubic-bezier(.55, 0, .45, 1) infinite;
+}
+
+@keyframes cardScanSweep {
+  0% {
+    transform: translateY(-100%);
+  }
+
+  /* A beat at the bottom before the next pass, so it reads as repeated
+     passes rather than a spinning loop. */
+  82%,
+  100% {
+    transform: translateY(300%);
+  }
+}
+
+/* ── Extracted fields arriving ──────────────────────────────────── */
+/* The whole block mounts at once when the response lands; staggering the
+   fields makes it read as the form being filled in, field by field. */
+.fields-reveal>label {
+  animation: fieldReveal 340ms var(--ease-out) both;
+}
+
+.fields-reveal>label:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.fields-reveal>label:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.fields-reveal>label:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.fields-reveal>label:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.fields-reveal>label:nth-child(5) {
+  animation-delay: 180ms;
+}
+
+.fields-reveal>label:nth-child(6) {
+  animation-delay: 225ms;
+}
+
+.fields-reveal>label:nth-child(7) {
+  animation-delay: 270ms;
+}
+
+.fields-reveal>label:nth-child(8) {
+  animation-delay: 315ms;
+}
+
+.fields-reveal>label:nth-child(9) {
+  animation-delay: 360ms;
+}
+
+/* Past nine the cascade stops earning its keep — the rest land together. */
+.fields-reveal>label:nth-child(n+10) {
+  animation-delay: 400ms;
+}
+
+@keyframes fieldReveal {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── The record being banked: the step tick draws itself ────────── */
+/* Two strokes growing out of the corner where they meet, instead of a ✓
+   glyph appearing all at once. */
+.step.done .step-dot::before {
+  content: "";
+}
+
+.step.done .step-dot::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 7px;
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  border-end-end-radius: 1px;
+  transform: rotate(45deg);
+  transform-origin: 100% 100%;
+  animation: stepCheckDraw 300ms var(--ease-out) both;
+}
+
+@keyframes stepCheckDraw {
+  0% {
+    width: 0;
+    height: 0;
+  }
+
+  45% {
+    width: 5px;
+    height: 0;
+  }
+
+  100% {
+    width: 5px;
+    height: 9px;
+  }
+}
+
+/* Reduced motion means NO animation, not an instant one. Section 20's global
+   kill switch only shortens durations, which can leave an animation's `from`
+   state on screen — extracted fields stuck at `opacity: 0`, a tick drawn to
+   zero, a sweep parked off the bottom of the card. Cancel the animations and
+   state each finished form outright. */
+@media (prefers-reduced-motion: reduce) {
+
+  /* A static gold rule along the bottom edge: still says "being read". */
+  .card-scan[data-scanning="true"] .card-scan-line {
+    animation: none;
+    transform: none;
+    top: auto;
+    bottom: 0;
+    height: 3px;
+    background: var(--gold);
+    border-bottom: 0;
+    box-shadow: none;
+  }
+
+  /* Fields appear at once, fully visible. */
+  .fields-reveal>label {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The tick is simply there, fully drawn. */
+  .step.done .step-dot::after {
+    animation: none;
+    width: 5px;
+    height: 9px;
   }
 }
 

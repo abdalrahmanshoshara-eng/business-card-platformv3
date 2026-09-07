@@ -1,7 +1,7 @@
 'use client';
 import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
-import { FormEvent, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import PageHero from '@/components/PageHero';
@@ -92,6 +92,30 @@ function UploadPageInner() {
   // timeout retry never bills Gemini twice.
   const inFlightRef = useRef(false);
   const idempotencyKeyRef = useRef<string | null>(null);
+
+  // Thumbnails of the chosen files, so the extraction sweep has something to
+  // read and the user can confirm they picked the right photo. Object URLs are
+  // revoked whenever the file changes, and on unmount.
+  const [frontUrl, setFrontUrl] = useState<string | null>(null);
+  const [backUrl, setBackUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!front) { setFrontUrl(null); return; }
+    const url = URL.createObjectURL(front);
+    setFrontUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [front]);
+
+  useEffect(() => {
+    if (!back) { setBackUrl(null); return; }
+    const url = URL.createObjectURL(back);
+    setBackUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [back]);
+
+  // The card is "being read" while the images travel to the server and Gemini
+  // works on them — the two steps the user waits through.
+  const scanning = loading && (currentStep === 'upload' || currentStep === 'extract');
 
   const previewData = useMemo(() => savedCard || duplicate?.existing_card || null, [savedCard, duplicate]);
   const reviewFields = useMemo(() => previewData?.review_fields || [], [previewData]);
@@ -293,6 +317,12 @@ function UploadPageInner() {
                   اختيار من المعرض
                 </button>
               </div>
+              {frontUrl && (
+                <div className="card-scan" data-scanning={scanning ? 'true' : 'false'}>
+                  <img src={frontUrl} alt="" />
+                  <span className="card-scan-line" aria-hidden="true" />
+                </div>
+              )}
               <span className={`selected-file ${front ? 'has-file' : ''}`}>{selectedFileName(front)}</span>
             </div>
             <div className="image-picker">
@@ -322,6 +352,12 @@ function UploadPageInner() {
                   اختيار من المعرض
                 </button>
               </div>
+              {backUrl && (
+                <div className="card-scan" data-scanning={scanning ? 'true' : 'false'}>
+                  <img src={backUrl} alt="" />
+                  <span className="card-scan-line" aria-hidden="true" />
+                </div>
+              )}
               <span className={`selected-file ${back ? 'has-file' : ''}`}>{selectedFileName(back)}</span>
             </div>
           </div>
@@ -386,7 +422,7 @@ function UploadPageInner() {
             </p>
           )}
 
-          <div className="grid">
+          <div className="grid fields-reveal">
             <label className={`full-width ${fieldClass('person_name')}`}>اسم الشخص <textarea readOnly value={combinedField(previewData, 'person_name')} /></label>
             <label className={`full-width ${fieldClass('job_title')}`}>المنصب <textarea readOnly value={combinedField(previewData, 'job_title')} /></label>
             <label className={`full-width ${fieldClass('company_name')}`}>اسم الشركة <textarea readOnly value={combinedField(previewData, 'company_name')} /></label>
