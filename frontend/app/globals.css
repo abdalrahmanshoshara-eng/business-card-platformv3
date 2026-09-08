@@ -261,6 +261,9 @@ img {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  /* Clears the fixed sidebar hamburger, which sits at the header's
+     inline-start edge on every screen size. */
+  padding-inline-start: 58px;
 }
 
 .header-brand {
@@ -541,6 +544,49 @@ img {
   backdrop-filter: blur(3px);
   z-index: 50;
   animation: fadeIn var(--base) var(--ease);
+}
+
+/* One hamburger for every screen size: docked at the header's inline-start
+   edge, showing a menu icon when the sidebar is closed and an X when open. */
+.sidebar-toggle {
+  position: fixed;
+  top: calc((var(--header-h) - 44px) / 2);
+  inset-inline-start: max(24px, calc((100vw - var(--shell-max)) / 2));
+  inset-inline-end: auto;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(138, 106, 47, .55);
+  background: linear-gradient(135deg, var(--gold), #b8934f);
+  color: #2b1f08;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  z-index: 60;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+/* Beats the generic `button:hover:not(:disabled)` rule in section 08. */
+.sidebar-toggle:hover:not(:disabled),
+.sidebar-toggle:focus-visible {
+  background: linear-gradient(135deg, var(--gold-hover), var(--gold));
+  border-color: rgba(138, 106, 47, .75);
+  color: #2b1f08;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
+}
+
+.sidebar-toggle:active:not(:disabled) {
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+}
+
+.sidebar-toggle svg {
+  width: 24px;
+  height: 24px;
 }
 
 .sidebar-toggle span {
@@ -2656,59 +2702,20 @@ li {
     width: 100%;
   }
 
-  /* Hamburger docked in the fixed header, inline-start (right in RTL). */
-  .sidebar-toggle {
-    position: fixed;
-    top: 10px;
-    inset-inline-start: 12px;
-    inset-inline-end: auto;
-    left: auto;
-    right: 10px;
-    width: 44px;
-    height: 44px;
-    min-height: 44px;
-    padding: 0;
-    border-radius: var(--r-md);
-    background: linear-gradient(135deg, var(--gold), #b8934f);
-    color: #2b1f08;
-    border: 1px solid rgba(138, 106, 47, .55);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
-    cursor: pointer;
-  }
-
-  .sidebar-toggle:hover {
-    background: linear-gradient(135deg, var(--gold-hover), var(--gold));
-    border-color: rgba(138, 106, 47, .7);
-  }
-
-  .sidebar-toggle svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  /* Keep the brand clear of the hamburger. */
-  .header-inner {
-    padding-inline-start: 62px;
-  }
-
   /* Off-canvas drawer. Removed from the box model when closed so it can
      never create a phantom horizontal scroll. */
   .app-sidebar {
     display: none;
     position: fixed;
-    top: var(--header-h);
+    top: 0;
     inset-inline-start: 0;
     inset-inline-end: auto;
     bottom: 0;
-    height: auto;
-    min-height: 0;
+    height: 100dvh;
+    min-height: 100vh;
     width: min(84vw, 320px);
     max-width: 320px;
-    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+    padding: calc(var(--header-h) + 6px) 16px calc(20px + env(safe-area-inset-bottom, 0px));
     flex-direction: column;
     flex-wrap: nowrap;
     align-items: stretch;
@@ -2719,6 +2726,10 @@ li {
     box-shadow: -14px 0 34px rgba(4, 48, 42, .38);
     z-index: 55;
     overflow-y: auto;
+  }
+
+  .sidebar-overlay {
+    inset: 0;
   }
 
   .app-shell.sidebar-open .app-sidebar {
@@ -2766,6 +2777,14 @@ li {
 
   .site-header {
     padding: 0 12px;
+  }
+
+  .sidebar-toggle {
+    inset-inline-start: 12px;
+  }
+
+  .header-inner {
+    padding-inline-start: 54px;
   }
 
   .header-logo {
@@ -3101,7 +3120,7 @@ li {
   }
 }
 
-/* ── Desktop (≥861px): collapsible sidebar + edge tab ───────────── */
+/* ── Desktop (≥861px): the same hamburger collapses the inline sidebar ─ */
 @media (min-width: 861px) {
   .sidebar-overlay {
     display: none !important;
@@ -3111,7 +3130,26 @@ li {
     padding-top: 6px;
   }
 
-  .app-shell.sidebar-collapsed .app-sidebar,
+  .sidebar-toggle {
+    top: calc((var(--header-h) - 34px) / 2);
+    width: 34px;
+    height: 34px;
+    min-height: 34px;
+    border-radius: var(--r-sm);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+  }
+
+  .sidebar-toggle svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .header-inner {
+    padding-inline-start: 48px;
+  }
+
+  /* Collapsed: the column folds away and the content reclaims its width.
+     `overflow: hidden` on .app-sidebar keeps the contents from spilling. */
   .app-shell.sidebar-closed .app-sidebar {
     width: 0;
     min-width: 0;
@@ -3119,59 +3157,6 @@ li {
     opacity: 0;
     border-color: transparent;
     pointer-events: none;
-  }
-
-  /* A tab flush against the sidebar's inner edge. It never moves on hover —
-     only its colour warms — so it can't feel jumpy under the cursor. */
-  .sidebar-toggle {
-    display: inline-flex !important;
-    position: fixed;
-    top: 50%;
-    transform: translateY(-50%) !important;
-    right: var(--sidebar-w, 272px);
-    left: auto;
-    width: 20px;
-    height: 76px;
-    min-height: 0;
-    padding: 0;
-    background: linear-gradient(165deg, var(--green-header), var(--green-deep));
-    color: var(--gold-hover);
-    border: 1px solid rgba(199, 166, 107, .3);
-    border-right: none;
-    border-radius: var(--r-md) 0 0 var(--r-md);
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 46;
-    box-shadow: -6px 0 16px -10px rgba(4, 48, 42, .7);
-    transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
-  }
-
-  .app-shell.sidebar-collapsed .sidebar-toggle,
-  .app-shell.sidebar-closed .sidebar-toggle {
-    right: 0;
-    left: auto;
-  }
-
-  .sidebar-toggle:hover,
-  .sidebar-toggle:focus,
-  .sidebar-toggle:active,
-  .sidebar-toggle:focus-visible {
-    transform: translateY(-50%) !important;
-    background: linear-gradient(165deg, var(--green-mid), var(--green-header));
-    color: #fff;
-    box-shadow: -6px 0 16px -10px rgba(4, 48, 42, .7);
-  }
-
-  .sidebar-toggle svg {
-    width: 15px;
-    height: 15px;
-    transition: transform var(--slow) var(--ease);
-  }
-
-  .app-shell.sidebar-collapsed .sidebar-toggle svg,
-  .app-shell.sidebar-closed .sidebar-toggle svg {
-    transform: rotate(180deg);
   }
 }
 

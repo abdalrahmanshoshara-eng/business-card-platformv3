@@ -44,7 +44,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const items = ITEMS.filter((it) => !it.adminOnly || isAdmin);
 
   return (
-    <aside className="app-sidebar" aria-label="القائمة الجانبية">
+    <aside id="app-sidebar" className="app-sidebar" aria-label="القائمة الجانبية">
       <div className="app-sidebar-user">
         <div className="app-sidebar-avatar" aria-hidden="true">{displayName.charAt(0)}</div>
         <div className="app-sidebar-user-meta">

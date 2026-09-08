@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/features/auth/AuthProvider';
 import Sidebar from './Sidebar';
 
@@ -14,75 +14,93 @@ const CloseIcon = () => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 );
-// Desktop collapse handle: a chevron; CSS rotates it 180° when collapsed.
-const ChevronIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M15 6l-6 6 6 6" />
-  </svg>
-);
 
-const COLLAPSE_KEY = 'bc-sidebar-collapsed';
+const OPEN_KEY = 'bc-sidebar-open';
+const MOBILE_MQ = '(max-width: 860px)';
 
+/**
+ * One control for every screen size: the hamburger in the header opens and
+ * closes the sidebar. Below 861px the sidebar is an overlay drawer (always
+ * starts closed); above it, it sits inline and remembers the last choice.
+ */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const [isMobile, setIsMobile] = useState(false);
-  const [open, setOpen] = useState(false);          // mobile drawer
-  const [collapsed, setCollapsed] = useState(false); // desktop collapse
+  const [isMobile, setIsMobile] = useState<boolean | null>(null); // null = not measured yet
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 860px)');
+    const mq = window.matchMedia(MOBILE_MQ);
     const apply = () => {
       setIsMobile(mq.matches);
-      if (mq.matches) setOpen(false);
+      if (mq.matches) {
+        setOpen(false);
+      } else {
+        let remembered = true;
+        try { remembered = localStorage.getItem(OPEN_KEY) !== '0'; } catch { /* storage unavailable */ }
+        setOpen(remembered);
+      }
     };
     apply();
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, []);
 
-  // Remember the desktop collapse preference across sessions.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(COLLAPSE_KEY) === '1') setCollapsed(true);
-    } catch { /* storage unavailable: ignore */ }
-  }, []);
+  const close = useCallback(() => setOpen(false), []);
 
-  function toggleDesktop() {
-    setCollapsed((c) => {
-      const next = !c;
-      try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+  const toggle = useCallback(() => {
+    setOpen((o) => {
+      const next = !o;
+      // Only the desktop choice is worth remembering; the drawer always
+      // reopens closed so a phone never loads behind an overlay.
+      if (isMobile === false) {
+        try { localStorage.setItem(OPEN_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+      }
       return next;
     });
-  }
+  }, [isMobile]);
+
+  // While the drawer covers the page, Escape closes it and the page behind
+  // it must not scroll.
+  useEffect(() => {
+    if (!isMobile || !open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [isMobile, open, close]);
 
   if (loading || !user) return <div className="app-main">{children}</div>;
 
   const shellClass = [
     'app-shell',
     isMobile ? 'is-mobile' : '',
-    isMobile ? (open ? 'sidebar-open' : 'sidebar-closed') : (collapsed ? 'sidebar-collapsed' : ''),
+    // Held back until the viewport is measured so neither layout flashes.
+    isMobile === null ? '' : (open ? 'sidebar-open' : 'sidebar-closed'),
   ].filter(Boolean).join(' ');
 
-  const toggleLabel = isMobile
-    ? (open ? 'إغلاق القائمة' : 'فتح القائمة')
-    : (collapsed ? 'إظهار القائمة الجانبية' : 'إخفاء القائمة الجانبية');
+  const toggleLabel = open ? 'إغلاق القائمة' : 'فتح القائمة';
 
   return (
     <div className={shellClass}>
       <button
         type="button"
         className="sidebar-toggle"
-        onClick={() => (isMobile ? setOpen((o) => !o) : toggleDesktop())}
+        onClick={toggle}
         aria-label={toggleLabel}
-        aria-expanded={isMobile ? open : !collapsed}
+        aria-expanded={open}
+        aria-controls="app-sidebar"
         title={toggleLabel}
       >
-        {isMobile ? (open ? <CloseIcon /> : <MenuIcon />) : <ChevronIcon />}
+        {open ? <CloseIcon /> : <MenuIcon />}
       </button>
 
-      {isMobile && open && <div className="sidebar-overlay" onClick={() => setOpen(false)} />}
+      {isMobile && open && <div className="sidebar-overlay" onClick={close} />}
 
-      <Sidebar onNavigate={() => { if (isMobile) setOpen(false); }} />
+      <Sidebar onNavigate={() => { if (isMobile) close(); }} />
 
       <div className="app-main">{children}</div>
     </div>
