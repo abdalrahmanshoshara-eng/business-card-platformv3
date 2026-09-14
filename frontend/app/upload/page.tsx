@@ -44,6 +44,9 @@ type ProcessingResponse = {
 
 type StepKey = 'upload' | 'extract' | 'duplicate' | 'save';
 
+// Holds the in-flight upload's idempotency key across a page reload.
+const IDEMPOTENCY_STORAGE_KEY = 'cardnest:upload:idempotency-key';
+
 const REVIEW_FIELD_LABELS: Record<string, string> = {
   person_name: 'اسم الشخص',
   person_name_ar: 'اسم الشخص (عربي)',
@@ -91,13 +94,34 @@ function UploadPageInner() {
   // React StrictMode) plus a stable idempotency key per attempt so a refresh or
   // timeout retry never bills Gemini twice.
   const inFlightRef = useRef(false);
-  const idempotencyKeyRef = useRef<string | null>(null);
 
   const previewData = useMemo(() => savedCard || duplicate?.existing_card || null, [savedCard, duplicate]);
   const reviewFields = useMemo(() => previewData?.review_fields || [], [previewData]);
 
+  // The key lives in sessionStorage, not in a ref: a ref dies with the page, so
+  // reloading mid-extraction used to start a brand-new operation and pay for a
+  // second Gemini call. sessionStorage survives the reload and is still scoped
+  // to this one tab. Every file-input change clears it, so a different card
+  // never reuses the previous card's key.
+  function currentIdempotencyKey(): string {
+    try {
+      const stored = sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
+      if (stored) return stored;
+      const fresh = newIdempotencyKey();
+      sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, fresh);
+      return fresh;
+    } catch {
+      // Private mode or blocked storage: fall back to a per-attempt key.
+      return newIdempotencyKey();
+    }
+  }
+
   function resetIdempotencyKey() {
-    idempotencyKeyRef.current = null;
+    try {
+      sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
+    } catch {
+      /* nothing to clear when storage is unavailable */
+    }
   }
 
   function combinedField(card: BusinessCard, field: 'person_name' | 'job_title' | 'company_name') {
@@ -130,8 +154,7 @@ function UploadPageInner() {
     }
 
     // Stable key for this attempt: created once, reused across refresh/timeout retries.
-    if (!idempotencyKeyRef.current) idempotencyKeyRef.current = newIdempotencyKey();
-    const idempotencyKey = idempotencyKeyRef.current;
+    const idempotencyKey = currentIdempotencyKey();
 
     const fd = new FormData();
     fd.append('front', front);
@@ -197,7 +220,11 @@ function UploadPageInner() {
       }
     } catch (error: any) {
       // Keep the same idempotency key so a manual retry of a transient failure
-      // reuses the in-flight/cached operation instead of double-billing.
+      // reuses the in-flight/cached operation instead of double-billing. The one
+      // exception is a key the server has already tied to different images:
+      // that key can never succeed again, so retire it and let the retry get a
+      // fresh one.
+      if (error?.errorType === 'idempotency_key_reused') resetIdempotencyKey();
       setStatus({ type: 'error', text: error.message || 'حدث خطأ أثناء المعالجة.' });
     } finally {
       inFlightRef.current = false;
