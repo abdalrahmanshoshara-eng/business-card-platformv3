@@ -41,9 +41,15 @@ services:
     networks:
       - app_network
     # Run migrations on every container start (safe with --run-syncdb)
+    #
+    # 3 workers x 4 threads = 12 requests in flight, matching
+    # deploy/docker-compose.prod.yml. Two plain sync workers served only two
+    # uploads at a time, and a card extraction holds its worker for the whole
+    # Gemini call, so a third user waited for a slot. Threads are the right
+    # trade here because that wait is network I/O, not CPU.
     command: >
       sh -c "python manage.py migrate --noinput &&
-             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 300 --graceful-timeout 300 --log-file -"
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --threads 4 --worker-class gthread --timeout 300 --graceful-timeout 300 --log-file -"
 
   # ── Next.js Frontend ──────────────────────────────────────────────────────
   frontend:

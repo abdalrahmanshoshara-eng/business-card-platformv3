@@ -1,6 +1,50 @@
 from django.conf import settings
-from django.db import IntegrityError, models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
+
+
+class CardNumberCounter(models.Model):
+    """Single-row allocator for :attr:`BusinessCard.sequence_number`.
+
+    The number is globally unique, and computing it as MAX(sequence_number)+1
+    in Python raced whenever two cards were saved at the same moment: every
+    concurrent saver read the same maximum, so all but one hit the unique
+    constraint and had to retry. Allocation now happens under a row lock, which
+    hands each caller a distinct number without the cards table itself becoming
+    the point of contention.
+    """
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    last_value = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f'CardNumberCounter(last_value={self.last_value})'
+
+
+def allocate_sequence_number() -> int:
+    """Reserve and return the next global card number.
+
+    Runs in its own transaction so the row lock covers only the allocation and
+    never the surrounding card INSERT, which writes image files to disk. A
+    number handed out here is not returned to the pool if the caller later
+    fails, so the series may contain gaps — the same trade-off a database
+    sequence makes.
+    """
+    with transaction.atomic():
+        counter = CardNumberCounter.objects.select_for_update().filter(pk=1).first()
+        if counter is None:
+            CardNumberCounter.objects.get_or_create(pk=1, defaults={'last_value': 0})
+            counter = CardNumberCounter.objects.select_for_update().get(pk=1)
+        # The Excel import commands assign explicit numbers, so keep the counter
+        # ahead of whatever is actually stored instead of trusting it blindly.
+        highest = (
+            BusinessCard.objects.order_by('-sequence_number')
+            .values_list('sequence_number', flat=True)
+            .first()
+        ) or 0
+        counter.last_value = max(counter.last_value, highest) + 1
+        counter.save(update_fields=['last_value'])
+        return counter.last_value
 
 
 class BusinessCard(models.Model):
@@ -101,17 +145,16 @@ class BusinessCard(models.Model):
             super().save(*args, **kwargs)
             return
 
-        # Compute the next sequence number with a small retry loop so a unique
-        # collision on sequence_number does not become a random 500.
+        # The allocator already serialises concurrent savers, so a collision now
+        # means someone stored an explicit number out of band. Retry anyway, and
+        # keep each attempt in a savepoint: on PostgreSQL an IntegrityError
+        # poisons the surrounding transaction, so without one the retry could
+        # not issue another query.
         for attempt in range(5):
-            last_number = (
-                BusinessCard.objects.order_by('-sequence_number')
-                .values_list('sequence_number', flat=True)
-                .first()
-            )
-            self.sequence_number = (last_number or 0) + 1
+            self.sequence_number = allocate_sequence_number()
             try:
-                super().save(*args, **kwargs)
+                with transaction.atomic():
+                    super().save(*args, **kwargs)
                 return
             except IntegrityError as exc:
                 # Only a sequence_number collision is retryable; any other

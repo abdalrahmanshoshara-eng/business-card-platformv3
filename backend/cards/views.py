@@ -44,7 +44,10 @@ from .services.welcome_text import build_welcome_sections
 logger = logging.getLogger(__name__)
 
 # A request stuck in "processing" longer than this (crashed worker) is reclaimable.
-EXTRACTION_PROCESSING_STALE_SECONDS = 180
+# It MUST stay above the gunicorn --timeout (300s) that bounds a live request:
+# reclaiming sooner means a retry starts a second Gemini call while the first is
+# still running, which bills the quota twice and can save the card twice.
+EXTRACTION_PROCESSING_STALE_SECONDS = int(os.getenv('EXTRACTION_PROCESSING_STALE_SECONDS', '360'))
 
 
 def _truthy(value) -> bool:
@@ -308,6 +311,15 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         data['idempotent_replay'] = True
         return data
 
+    @staticmethod
+    def _key_reused_response() -> Response:
+        """The client sent a known idempotency key with different images."""
+        return Response(
+            {'detail': 'مفتاح العملية مستخدم مسبقاً لصور مختلفة. يرجى بدء عملية رفع جديدة.',
+             'error_type': 'idempotency_key_reused'},
+            status=status.HTTP_409_CONFLICT,
+        )
+
     def _claim_extraction_request(self, user, idem_key: str, fingerprint: str):
         """Atomically claim (or replay) an extraction operation.
 
@@ -327,10 +339,20 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 },
             )
             if not created:
+                # A retry re-sends the same images. The same key carrying
+                # *different* images is a reused key, and answering it from this
+                # row would describe another upload entirely — replaying would
+                # hand back the wrong card, and "in progress" would point at an
+                # operation the client never started.
+                same_images = (not req.image_fingerprint) or req.image_fingerprint == fingerprint
                 if req.status == ExtractionRequest.STATUS_COMPLETED and req.result:
+                    if not same_images:
+                        return req, self._key_reused_response()
                     return req, Response(self._replay(req.result), status=status.HTTP_200_OK)
                 if req.status == ExtractionRequest.STATUS_PROCESSING and \
                         (now - req.updated_at).total_seconds() < EXTRACTION_PROCESSING_STALE_SECONDS:
+                    if not same_images:
+                        return req, self._key_reused_response()
                     return req, Response(
                         {'detail': 'العملية قيد المعالجة حالياً. لا حاجة لإعادة الإرسال.',
                          'error_type': 'extraction_in_progress', 'extraction_status': 'processing'},
