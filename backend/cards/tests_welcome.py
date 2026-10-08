@@ -378,8 +378,10 @@ class DefaultWelcomeLetterTests(TestCase):
         cfg = resp.data['welcome_email']
         self.assertEqual(cfg['welcome_subject'], 'رسالة شكر وتقدير')
         self.assertEqual(cfg['welcome_subject_en'], 'Message of Appreciation')
-        self.assertIn('نائب وزير الاقتصاد والصناعة', cfg['welcome_message'])
-        self.assertIn('Deputy Minister of Economy and Industry', cfg['welcome_message_en'])
+        self.assertIn('وزارة الاقتصاد والصناعة', cfg['welcome_message'])
+        self.assertNotIn('نائب وزير', cfg['welcome_message'])
+        self.assertIn('Ministry of Economy and Industry', cfg['welcome_message_en'])
+        self.assertNotIn('Deputy Minister', cfg['welcome_message_en'])
         # The salutation placeholder is exposed so the owner can keep or drop it.
         self.assertIn('{{salutation}}', cfg['welcome_message'])
         self.assertIn('{{salutation}}', cfg['welcome_message_en'])
@@ -389,7 +391,7 @@ class DefaultWelcomeLetterTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertTrue(resp.data['can_edit_letter'])
         self.assertFalse(resp.data['is_customized'])
-        self.assertIn('نائب وزير الاقتصاد والصناعة', resp.data['welcome_message'])
+        self.assertIn('وزارة الاقتصاد والصناعة', resp.data['welcome_message'])
 
     def test_test_send_stays_admin_only(self):
         # Sending to an arbitrary address is a mail-config diagnostic, not part
@@ -486,7 +488,7 @@ class ResetWelcomeLetterTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertFalse(resp.data['is_customized'])
         self.assertEqual(resp.data['welcome_subject'], 'رسالة شكر وتقدير')
-        self.assertIn('نائب وزير الاقتصاد والصناعة', resp.data['welcome_message'])
+        self.assertIn('وزارة الاقتصاد والصناعة', resp.data['welcome_message'])
         self.assertEqual(resp.data['welcome_subject_en'], 'Message of Appreciation')
 
     def test_reset_drops_the_row_rather_than_copying_the_template(self):

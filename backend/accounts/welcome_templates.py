@@ -35,7 +35,6 @@ BODY_AR = """{{salutation}}
 وإذ نعتز بهذا اللقاء، نتطلع إلى استمرار التواصل وتعزيز جسور التعاون والشراكة، بما يسهم في تحقيق المزيد من التقدم والنجاح.
 
 مع خالص التقدير والاحترام،
-نائب وزير الاقتصاد والصناعة
 وزارة الاقتصاد والصناعة"""
 
 # ── English (original) ────────────────────────────────────────────────────────
@@ -49,7 +48,6 @@ We highly appreciate this opportunity for dialogue and the exchange of views and
 We greatly value this meeting and look forward to continued communication and to further strengthening the bonds of cooperation and partnership in pursuit of greater progress and shared success.
 
 With our highest appreciation and respect,
-Deputy Minister of Economy and Industry
 Ministry of Economy and Industry"""
 
 # ── French ───────────────────────────────────────────────────────────────────
@@ -63,7 +61,6 @@ Nous apprécions vivement votre visite et l'occasion qu'elle nous a offerte de d
 Honorés de cette rencontre, nous formons le vœu de poursuivre nos échanges et de consolider les liens de coopération et de partenariat, en vue de nouveaux progrès et de succès partagés.
 
 Avec l'expression de notre plus haute considération,
-Le Vice-Ministre de l'Économie et de l'Industrie
 Ministère de l'Économie et de l'Industrie"""
 
 # ── German ───────────────────────────────────────────────────────────────────
@@ -77,7 +74,6 @@ Wir schätzen Ihren Besuch sowie die damit verbundene Gelegenheit zum Dialog und
 Wir fühlen uns durch dieses Treffen geehrt und freuen uns auf einen fortdauernden Austausch sowie auf die weitere Festigung der Bande der Zusammenarbeit und Partnerschaft, im Interesse weiteren Fortschritts und gemeinsamen Erfolgs.
 
 Mit vorzüglicher Hochachtung,
-Der Stellvertretende Minister für Wirtschaft und Industrie
 Ministerium für Wirtschaft und Industrie"""
 
 # ── Turkish ──────────────────────────────────────────────────────────────────
@@ -91,7 +87,6 @@ Ziyaretinizi ve sağladığı diyalog ile görüş ve fikir alışverişi fırsa
 Bu görüşmeden onur duyar, iletişimin sürdürülmesini ve daha fazla ilerleme ile ortak başarı adına iş birliği ve ortaklık bağlarının daha da güçlendirilmesini temenni ederiz.
 
 En derin saygı ve takdirlerimle,
-Ekonomi ve Sanayi Bakan Yardımcısı
 Ekonomi ve Sanayi Bakanlığı"""
 
 # ── Russian ──────────────────────────────────────────────────────────────────
@@ -105,7 +100,6 @@ BODY_RU = """{{salutation}}
 Дорожа этой встречей, мы надеемся на продолжение общения и на дальнейшее укрепление связей сотрудничества и партнёрства во имя новых успехов и общих достижений.
 
 С глубоким уважением,
-Заместитель Министра экономики и промышленности
 Министерство экономики и промышленности"""
 
 # ── Spanish ──────────────────────────────────────────────────────────────────
@@ -119,7 +113,6 @@ Valoramos enormemente su visita y la oportunidad de diálogo y de intercambio de
 Honrados por este encuentro, esperamos mantener la comunicación y seguir estrechando los lazos de cooperación y colaboración, en aras de un mayor progreso y de un éxito compartido.
 
 Con nuestra más alta consideración,
-Viceministro de Economía e Industria
 Ministerio de Economía e Industria"""
 
 # ── Chinese (Simplified) ─────────────────────────────────────────────────────
@@ -133,7 +126,6 @@ BODY_ZH = """{{salutation}}
 我们对此次会晤深感荣幸，并期待继续保持联系，进一步巩固合作与伙伴关系的纽带，以取得更大的进步与共同的成功。
 
 顺致最崇高的敬意，
-经济与工业部副部长
 经济与工业部"""
 
 # Reviewed letters, keyed by ISO 639-1 code. A card language present here never

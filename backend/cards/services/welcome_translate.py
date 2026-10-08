@@ -47,7 +47,7 @@ correspondence. Translate the following formal letter of appreciation into
 
 Requirements:
 - Preserve the formal, diplomatic register of official state correspondence.
-  This letter is signed by a Deputy Minister; it must not read casually.
+  This letter is signed by the Ministry; it must not read casually.
 - Preserve the paragraph structure and the closing signature block exactly.
 - Translate the subject line too.
 - Do NOT add, remove, or explain anything. Output the translation only.
