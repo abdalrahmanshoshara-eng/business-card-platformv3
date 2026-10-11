@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 from accounts.models import Profile, WelcomeLetter
 from .models import BusinessCard
 from .services.card_data import prepare_card_data
+from .services.welcome_text import card_languages
 
 User = get_user_model()
 
@@ -245,6 +246,22 @@ class WelcomeLanguageTests(TestCase):
         self.assertIn('dir="ltr" lang="de"', html)   # German block reads LTR…
         self.assertIn('dir="rtl" lang="ar"', html)   # …beside the Arabic one
 
+    def test_english_front_german_back_gets_arabic_and_german(self):
+        # The holder's own language wins over the card's English side.
+        for printed in (['en', 'de'], ['de', 'en'], ['ar', 'en', 'de']):
+            with self.subTest(printed=printed):
+                card = make_card(self.user, [f'{"-".join(printed)}@corp.com'], printed_languages=printed)
+                self.assertEqual(card_languages(card), ['ar', 'de'])
+                msg = self.send(card)
+                self.assertIn('Dankschreiben', msg.subject)
+                self.assertNotIn('Message of Appreciation', msg.subject)
+
+    def test_english_stays_the_second_language_without_another_one(self):
+        for printed in (['en'], ['ar', 'en'], ['en', 'ar']):
+            with self.subTest(printed=printed):
+                card = make_card(self.user, [f'x-{"-".join(printed)}@corp.com'], printed_languages=printed)
+                self.assertEqual(card_languages(card), ['ar', 'en'])
+
     def test_language_without_template_is_translated_once(self):
         card = make_card(self.user, ['ja@corp.com'], printed_languages=['ja'])
         with patch(
@@ -309,6 +326,15 @@ class WelcomeSalutationTests(TestCase):
     def test_native_salutation_used_for_the_cards_own_language(self):
         card = make_card(
             self.user, ['de2@corp.com'], printed_languages=['de'],
+            salutation_en='Dear Dr. Weber,', salutation_native='Sehr geehrter Herr Dr. Weber,',
+        )
+        msg = self.send(card)
+        self.assertIn('Sehr geehrter Herr Dr. Weber,', msg.body)
+        self.assertNotIn('Dear Dr. Weber,', msg.body)
+
+    def test_english_german_card_is_greeted_in_german(self):
+        card = make_card(
+            self.user, ['ende@corp.com'], printed_languages=['en', 'de'],
             salutation_en='Dear Dr. Weber,', salutation_native='Sehr geehrter Herr Dr. Weber,',
         )
         msg = self.send(card)

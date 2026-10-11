@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Bump when the prompt/schema/pipeline changes in a way that should invalidate
 # cached extraction fingerprints. Part of the image fingerprint (see views).
-EXTRACTION_SCHEMA_VERSION = '2'
+EXTRACTION_SCHEMA_VERSION = '3'
 
 
 class ExtractionError(RuntimeError):
@@ -137,8 +137,12 @@ Rules:
   conflicting, or likely incomplete.
 - printed_languages: ISO 639-1 codes of the languages ACTUALLY PRINTED on the
   card, most prominent first — e.g. ["ar"], ["en"], ["ar","en"], ["de"],
-  ["fr","ar"]. When the two sides carry different languages, list BOTH. Judge by
-  what is printed, not by the country. Never invent a language you cannot see.
+  ["fr","ar"], ["en","de"]. Check EACH side on its own: when the front and the
+  back carry different languages, list BOTH (an English front with a German back
+  is ["en","de"]). German, French, Spanish, Italian, Turkish, etc. are written
+  in Latin letters but are NOT English — identify them by their words (e.g.
+  "Geschäftsführer", "Straße", "GmbH" → de). Judge by what is printed, not by
+  the country. Never invent a language you cannot see.
 - salutation_ar / salutation_en: the opening salutation line of a FORMAL letter
   of appreciation addressed to this card's holder, in Arabic and in English.
     • Match the addressee: a named person → address the person; a company,
@@ -154,9 +158,10 @@ Rules:
       e.g. "السادة في شركة النور للتجارة الكرام،" / "Dear NOUR Trading Company,"
     • Leave both empty when the card carries no usable name at all.
     • salutation_native: the SAME salutation written in the card's own printed
-      language, but ONLY when that language is neither Arabic nor English
-      (e.g. "Sehr geehrter Herr Dr. Weber," for a German card). Leave it empty
-      for Arabic-only, English-only, and Arabic+English cards.
+      language whenever printed_languages contains a language other than Arabic
+      and English — even when it appears on one side only (e.g. "Sehr geehrter
+      Herr Dr. Weber," for a German card or an English/German card). Leave it
+      empty only for Arabic-only, English-only, and Arabic+English cards.
 """
 
 STRING_FIELDS = {
