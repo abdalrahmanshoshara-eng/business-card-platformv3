@@ -236,13 +236,13 @@ class BusinessCardCreateDuplicateApiTests(TestCase):
         }
         BusinessCard.objects.create(**prepare_card_data(self.card_data, infer_missing_investment=False))
 
-    def test_duplicate_create_returns_200_and_existing_card(self):
+    def test_duplicate_create_returns_409_with_the_existing_card(self):
         response = self.client.post('/api/cards/', self.card_data, format='json')
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data.get('duplicate'))
-        self.assertIn('existing_card', response.data)
-        self.assertEqual(response.data['existing_card']['company_name'], 'Duplicate Co')
-        self.assertEqual(response.data['existing_card']['emails'], ['dup@example.com'])
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.data.get('duplicate_conflict'))
+        candidate = response.data['duplicate_candidates'][0]
+        self.assertEqual(candidate['company_name'], 'Duplicate Co')
+        self.assertEqual(candidate['emails'], ['dup@example.com'])
 
 
 class DuplicateMergeTests(TestCase):

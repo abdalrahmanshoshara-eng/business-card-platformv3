@@ -23,6 +23,7 @@ type DuplicateResponse = {
   updated?: boolean;
   updated_fields?: string[];
   reason?: string;
+  score?: number;
   existing_card?: BusinessCard;
   extracted_data?: Partial<BusinessCard>;
   idempotent_replay?: boolean;
@@ -35,6 +36,7 @@ type ExtractResponse = {
   idempotent_replay?: boolean;
   website_visited?: boolean;
   enrichment?: { reused: boolean; status: string };
+  possible_duplicate?: { id: number; sequence_number: number; score: number; reason: string };
 };
 type ProcessingResponse = {
   error_type: 'extraction_in_progress';
@@ -205,7 +207,10 @@ function UploadPageInner() {
       const ok = data as ExtractResponse;
       setSavedCard(ok.card);
       markStep('save', ['upload', 'extract', 'duplicate', 'save']);
-      setStatus({ type: 'success', text: (ok.message || `تم حفظ الكرت كسجل رقم ${ok.card.sequence_number}`) + replayNote });
+      const possibleNote = ok.possible_duplicate
+        ? ` — تنبيه: مشابه لكرت #${ok.possible_duplicate.sequence_number} (${ok.possible_duplicate.reason})، وعُلِّم للمراجعة.`
+        : '';
+      setStatus({ type: 'success', text: (ok.message || `تم حفظ الكرت كسجل رقم ${ok.card.sequence_number}`) + possibleNote + replayNote });
       resetIdempotencyKey();
       // Prompt to send the welcome email once we have the card's email.
       if ((ok.card.emails || []).length > 0) {

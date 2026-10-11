@@ -30,7 +30,7 @@ Next.js (frontend)  ──HTTP + Session Cookie──▶  Django REST (backend) 
 
 خدمات `cards/services/`:
 - `access.py` — `cards_for_user(user)` قاعدة العزل حسب الملكية.
-- `duplicates.py` — كشف/تسجيل التكرار (مستخرَج من الـViewSet).
+- `duplicates.py` — كشف التكرار بنسبة تشابه موزونة على **كل** حقول الكرت: الاسم 25، الإيميلات 20، الأرقام 20، الشركة 15، المسمى 8، الموقع 7، العنوان 5 (النصوص بمقارنة تقريبية `difflib`، والإيميلات/الأرقام بنسبة العناصر المشتركة، والحقل الفارغ في الكرتين لا يُحسب). ≥95% مكرر (يدوي: 409؛ رفع صورة: يُعاد الكرت الموجود ويُرمَّم)، 75–95% مشابه محتمل (يدوي: 409 ليقرر المستخدم؛ رفع صورة: يُحفظ ويُعلَّم للمراجعة مع `possible_duplicate`)، أقل = كرت جديد. حماية: اختلاف اسم الشخص بأكثر من 30% يلغي التكرار. `duplicate_hash` (من `duplicate_key` في `normalization.py`) بصمة التطابق الكامل فقط.
 - `security.py` — تعقيم Excel، التحقق من الصور (MIME/الحجم/المحتوى)، منع SSRF.
 - `card_data.py`, `normalization.py`, `natural_search.py` — تحضير وبحث البيانات.
 - **Infrastructure Services**: `extractor.py` (Gemini)، `website_enrichment.py` (زيارة المواقع)، تصدير Excel داخل الـViewSet.

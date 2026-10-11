@@ -50,35 +50,47 @@ def normalize_phones(values: Iterable[str] | None, default_region: str = 'SA') -
     return clean_list(normalized)
 
 
-def build_duplicate_hash(data: dict) -> str:
-    emails = [normalize_text(x) for x in data.get('emails', []) if x]
-    phones = [re.sub(r'\D+', '', x) for x in data.get('mobile_numbers', []) if x]
-    website = normalize_text(data.get('website'))
-    person = normalize_text(data.get('person_name') or data.get('person_name_ar') or data.get('person_name_en'))
-    company = normalize_text(data.get('company_name') or data.get('company_name_ar') or data.get('company_name_en'))
-
-    # Prefer stable contact identifiers over name-only matching.
-    if emails:
-        key = 'email:' + '|'.join(sorted(emails))
-    elif phones:
-        key = 'phone:' + '|'.join(sorted(phones))
-    elif website and person:
-        key = f'person_site:{person}:{website}'
-    else:
-        key = f'name_company:{person}:{company}:{website}'
-    return hashlib.sha256(key.encode('utf-8')).hexdigest()
+# Every piece of information printed on a card. The stored ``duplicate_hash`` is
+# the exact fingerprint of all of them; near-duplicates (OCR slips, a missing
+# field) are scored field by field in ``duplicates.py``.
+DUPLICATE_TEXT_FIELDS = (
+    'person_name', 'person_name_ar', 'person_name_en',
+    'job_title', 'job_title_ar', 'job_title_en',
+    'company_name', 'company_name_ar', 'company_name_en',
+    'website', 'address',
+)
 
 
-def duplicate_reason(new_data: dict, existing) -> str:
-    new_emails = {normalize_text(x) for x in new_data.get('emails', [])}
-    old_emails = {normalize_text(x) for x in existing.emails or []}
-    if new_emails & old_emails:
-        return 'نفس البريد الإلكتروني'
-    new_phones = {re.sub(r'\D+', '', x) for x in new_data.get('mobile_numbers', [])}
-    old_phones = {re.sub(r'\D+', '', x) for x in existing.mobile_numbers or []}
-    if new_phones & old_phones:
-        return 'نفس رقم الموبايل'
-    return 'نفس بصمة الاسم/الشركة/الموقع'
+def _card_value(data, name: str):
+    """Read a field from a prepared-data dict or a BusinessCard instance."""
+    if isinstance(data, dict):
+        return data.get(name)
+    return getattr(data, name, None)
+
+
+def duplicate_key(data) -> str:
+    """Normalised fingerprint of ALL the card's information.
+
+    Equal keys mean identical cards. Emails and phone numbers are compared as
+    sets, so their order on the card is ignored.
+    """
+    parts = [f'{name}={normalize_text(_card_value(data, name))}' for name in DUPLICATE_TEXT_FIELDS]
+    emails = sorted({normalize_text(str(x)) for x in _card_value(data, 'emails') or [] if x} - {''})
+    phones = sorted({re.sub(r'\D+', '', str(x)) for x in _card_value(data, 'mobile_numbers') or [] if x} - {''})
+    parts.append('emails=' + '|'.join(emails))
+    parts.append('phones=' + '|'.join(phones))
+    return 'full:' + ';'.join(parts)
+
+
+def has_card_identity(data) -> bool:
+    """False for a card carrying no information at all — never a duplicate."""
+    if any(normalize_text(_card_value(data, name)) for name in DUPLICATE_TEXT_FIELDS):
+        return True
+    return bool(_card_value(data, 'emails') or _card_value(data, 'mobile_numbers'))
+
+
+def build_duplicate_hash(data) -> str:
+    return hashlib.sha256(duplicate_key(data).encode('utf-8')).hexdigest()
 
 
 # ── Country derivation ───────────────────────────────────────

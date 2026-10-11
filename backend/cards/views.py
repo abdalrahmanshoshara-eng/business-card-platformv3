@@ -26,13 +26,14 @@ from .models import BusinessCard, CompanyDomainEnrichment, ExtractionRequest, Ge
 from .serializers import BusinessCardSerializer, CompanyDomainEnrichmentSerializer
 from .services.extractor import EXTRACTION_SCHEMA_VERSION, ExtractionError, extract_business_card
 from .services.image_processing import preprocess_image
-from .services.normalization import duplicate_reason
 from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
 from .services.natural_search import apply_natural_search, derive_category, parse_natural_query
 from .services.access import cards_for_user
 from .services.duplicates import (
+    candidate_payload,
     find_duplicate_candidates,
     find_existing_duplicate,
+    find_possible_duplicate,
     salt_duplicate_hash,
 )
 from .services.security import excel_safe, validate_image_upload
@@ -92,10 +93,13 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         return cards_for_user(self.request.user)
 
     def _find_existing_duplicate(self, data: dict):
-        candidates = find_duplicate_candidates(data, self._scoped(), limit=1)
-        if not candidates or candidates[0]['score'] < 80:
-            return None
-        return self._scoped().filter(id=candidates[0]['id']).first()
+        return find_existing_duplicate(data, self._scoped())
+
+    @staticmethod
+    def _duplicate_detail(candidates: list[dict]) -> str:
+        if any(candidate['is_duplicate'] for candidate in candidates):
+            return 'يوجد كرت مكرر لهذه البيانات.'
+        return 'يوجد كرت مشابه محتمل. راجع نسبة التشابه ثم قرّر.'
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -121,23 +125,24 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         data = _prepare_data(validated)
         confirm_duplicate = _truthy(request.data.get('confirm_duplicate') or request.data.get('force_create'))
 
+        # Duplicates (>= 95%) and possible duplicates (>= 75%) both go back to the
+        # user, who may save anyway with confirm_duplicate.
         candidates = find_duplicate_candidates(data, self._scoped())
-        strong_candidates = [candidate for candidate in candidates if candidate['score'] >= 80]
-        if strong_candidates and not confirm_duplicate:
-            logger.info('manual_card_duplicate_detected candidates=%s', len(strong_candidates))
+        if candidates and not confirm_duplicate:
+            logger.info('manual_card_duplicate_detected candidates=%s top_score=%s', len(candidates), candidates[0]['score'])
             return Response(
                 {
-                    'detail': 'يوجد كرت مشابه بنفس البريد أو رقم الهاتف أو نفس بيانات الشركة/الشخص.',
+                    'detail': self._duplicate_detail(candidates),
                     'error_type': 'duplicate_card',
                     'duplicate_conflict': True,
-                    'duplicate_candidates': strong_candidates,
+                    'duplicate_candidates': candidates,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
 
-        if strong_candidates and confirm_duplicate:
+        if candidates and confirm_duplicate:
             data = salt_duplicate_hash(data)
-            logger.info('manual_card_duplicate_confirmed candidates=%s', len(strong_candidates))
+            logger.info('manual_card_duplicate_confirmed candidates=%s', len(candidates))
 
         save_kwargs = dict(data)
         save_kwargs['owner'] = request.user  # owner comes from the session, never the client
@@ -154,7 +159,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             if candidates and not confirm_duplicate:
                 return Response(
                     {
-                        'detail': 'يوجد كرت مشابه بنفس البريد أو رقم الهاتف.',
+                        'detail': self._duplicate_detail(candidates),
                         'error_type': 'duplicate_card',
                         'duplicate_conflict': True,
                         'duplicate_candidates': candidates,
@@ -496,9 +501,10 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         prepared = _prepare_data(extracted)
         meta = result.meta
         # Duplicate lookup is scoped to the current user's own cards.
-        existing = find_existing_duplicate(prepared, self._scoped())
+        match = find_existing_duplicate(prepared, self._scoped())
 
-        if existing:
+        if match:
+            existing = match.card
             updated_fields = [
                 *merge_missing_card_data(existing, prepared),
                 *merge_missing_card_images(existing, front, back),
@@ -508,7 +514,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 'saved': bool(updated_fields),
                 'updated': bool(updated_fields),
                 'updated_fields': updated_fields,
-                'reason': duplicate_reason(prepared, existing),
+                'reason': match.reason,
+                'score': match.score,
                 'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
                 'extracted_data': extracted,
             }
@@ -520,6 +527,14 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             )
             logger.info('card_duplicate_handled existing_id=%s updated_fields=%s', existing.id, updated_fields)
             return Response(payload, status=status.HTTP_200_OK)
+
+        # A possible duplicate (75–95%) is still saved — the extraction may have
+        # misread a field — but flagged so a human decides.
+        possible = find_possible_duplicate(prepared, self._scoped())
+        if possible:
+            prepared['needs_review'] = True
+            note = f'مشابه لكرت #{possible.card.sequence_number} — {possible.reason}'
+            prepared['review_notes'] = ' | '.join(p for p in [prepared.get('review_notes', ''), note] if p)
 
         # Visit the company website to determine its activity ONLY when the card
         # itself didn't already give us one — this saves a Gemini call (and quota)
@@ -564,8 +579,9 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             )
         except IntegrityError:
             logger.exception('card_save_integrity_failed')
-            existing = self._find_existing_duplicate(prepared)
-            if existing:
+            match = self._find_existing_duplicate(prepared)
+            if match:
+                existing = match.card
                 updated_fields = [
                     *merge_missing_card_data(existing, prepared),
                     *merge_missing_card_images(existing, front, back),
@@ -575,7 +591,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                     'saved': bool(updated_fields),
                     'updated': bool(updated_fields),
                     'updated_fields': updated_fields,
-                    'reason': duplicate_reason(prepared, existing),
+                    'reason': match.reason,
+                    'score': match.score,
                     'existing_card': BusinessCardSerializer(existing, context={'request': request}).data,
                     'extracted_data': extracted,
                 }
@@ -606,6 +623,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             'message': f'تم حفظ الكرت كسجل رقم {card.sequence_number}',
             'website_visited': enrichment_payload is not None,
         }
+        if possible:
+            payload['possible_duplicate'] = candidate_payload(possible)
         if enrichment_payload is not None:
             payload['enrichment'] = enrichment_payload
         self._complete_extraction_request(extraction_request, payload, card=card)

@@ -14,6 +14,8 @@ type DuplicateCandidate = {
   company_name: string;
   reason: string;
   score: number;
+  is_duplicate: boolean;
+  differing_fields: string[];
 };
 
 function ManualAddPageInner() {
@@ -84,7 +86,7 @@ function ManualAddPageInner() {
     } catch (err: any) {
       if (err instanceof ApiError && err.data?.duplicate_conflict) {
         setDuplicateCandidates(err.data.duplicate_candidates || []);
-        setStatus({ type: 'warning', text: err.message || 'يوجد كرت مشابه. راجع النتائج ثم اختر الحفظ رغم التكرار عند الحاجة.' });
+        setStatus({ type: 'warning', text: err.message || 'يوجد كرت مكرر أو مشابه. راجع نسبة التشابه ثم اختر الحفظ رغم التكرار عند الحاجة.' });
       } else {
         setStatus({ type: 'error', text: err.message || 'فشل الحفظ' });
       }
@@ -158,10 +160,13 @@ function ManualAddPageInner() {
 
         {duplicateCandidates.length > 0 && (
           <div className="card">
-            <h3>كروت مشابهة محتملة</h3>
+            <h3>كروت مكررة أو مشابهة</h3>
             <ul>
               {duplicateCandidates.map((candidate) => (
                 <li key={candidate.id}>
+                  <span className={candidate.is_duplicate ? 'badge warning' : 'badge'}>
+                    {candidate.is_duplicate ? 'مكرر' : 'مشابه محتمل'} {candidate.score}%
+                  </span>{' '}
                   #{candidate.sequence_number} — {candidate.person_name || 'بدون اسم'} — {candidate.company_name || 'بدون شركة'} — {candidate.reason}
                 </li>
               ))}
