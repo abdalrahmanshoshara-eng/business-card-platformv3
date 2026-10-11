@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import WelcomePrompt from '@/components/WelcomePrompt';
+import CardCamera, { liveCameraSupported } from '@/components/CardCamera';
 import { useAuth } from '@/features/auth/AuthProvider';
 import {
   BusinessCard,
@@ -73,6 +74,8 @@ function UploadPageInner() {
   const frontGalleryRef = useRef<HTMLInputElement>(null);
   const backCameraRef = useRef<HTMLInputElement>(null);
   const backGalleryRef = useRef<HTMLInputElement>(null);
+  // Which face the live camera (with its card guide) is capturing.
+  const [cameraFor, setCameraFor] = useState<'front' | 'back' | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: StatusType; text: string }>({
     type: 'idle',
@@ -277,6 +280,13 @@ function UploadPageInner() {
     return 'step';
   }
 
+  // Live camera with the card guide when the browser allows it (HTTPS /
+  // localhost); otherwise the device's own camera app via the file input.
+  function openCamera(face: 'front' | 'back') {
+    if (liveCameraSupported()) setCameraFor(face);
+    else (face === 'front' ? frontCameraRef : backCameraRef).current?.click();
+  }
+
   function selectedFileName(file: File | null) {
     return file ? file.name : 'لم يتم اختيار صورة بعد';
   }
@@ -318,7 +328,7 @@ function UploadPageInner() {
                 onChange={event => { setFront(event.target.files?.[0] || null); resetIdempotencyKey(); }}
               />
               <div className="image-picker-actions">
-                <button type="button" className="file-action" onClick={() => frontCameraRef.current?.click()} disabled={loading}>
+                <button type="button" className="file-action" onClick={() => openCamera('front')} disabled={loading}>
                   تصوير بالكاميرا
                 </button>
                 <button type="button" className="file-action secondary" onClick={() => frontGalleryRef.current?.click()} disabled={loading}>
@@ -347,7 +357,7 @@ function UploadPageInner() {
                 onChange={event => { setBack(event.target.files?.[0] || null); resetIdempotencyKey(); }}
               />
               <div className="image-picker-actions">
-                <button type="button" className="file-action" onClick={() => backCameraRef.current?.click()} disabled={loading}>
+                <button type="button" className="file-action" onClick={() => openCamera('back')} disabled={loading}>
                   تصوير بالكاميرا
                 </button>
                 <button type="button" className="file-action secondary" onClick={() => backGalleryRef.current?.click()} disabled={loading}>
@@ -455,6 +465,20 @@ function UploadPageInner() {
           {welcomeInfo && <p className={`status-box ${welcomeInfo.type}`}>{welcomeInfo.text}</p>}
         </section>
       )}
+
+      <CardCamera
+        open={cameraFor !== null}
+        title={cameraFor === 'back' ? 'تصوير الوجه الخلفي' : 'تصوير الوجه الأمامي'}
+        fileName={cameraFor === 'back' ? 'card-back' : 'card-front'}
+        onCapture={file => {
+          if (cameraFor === 'back') setBack(file);
+          else setFront(file);
+          resetIdempotencyKey();
+          setCameraFor(null);
+        }}
+        onClose={() => setCameraFor(null)}
+        onFallback={() => (cameraFor === 'back' ? backCameraRef : frontCameraRef).current?.click()}
+      />
 
       <WelcomePrompt
         open={welcomePromptOpen}

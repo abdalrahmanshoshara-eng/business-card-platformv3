@@ -136,6 +136,7 @@ python manage.py assign_legacy_cards --dry-run             # معاينة دون
 ## 16. مسار استخراج الكروت عبر Gemini (المحسّن)
 
 ### 16.1 رفع الصور
+- التصوير: «تصوير بالكاميرا» يفتح كاميرا مباشرة (`components/CardCamera.tsx`) فيها مستطيل بنسب الكرت (ID‑1، أفقي/عمودي) لوضع الكرت داخله، وتُقصّ الصورة على المستطيل مع هامش 4% (الحسابات في `features/camera/frame.ts` مع اختباراتها). الكاميرا المباشرة تتطلب HTTPS أو localhost؛ وإلا أو عند رفض الإذن يُستخدم تطبيق كاميرا الجهاز (`capture="environment"`).
 - الواجهة: `frontend/app/upload/page.tsx`. الوجه الأمامي **إلزامي**، الخلفي **اختياري**. زر استخراج واحد، معطّل أثناء الطلب، مع حارس `inFlightRef` لمنع الإرسال المزدوج (بما في ذلك React StrictMode).
 - الواجهة تولّد **idempotency key** ثابتاً لكل محاولة وترسله في ترويسة `X-Idempotency-Key` وحقل `idempotency_key`.
 - الـEndpoint: `POST /api/cards/extract` (`BusinessCardViewSet.extract`).
