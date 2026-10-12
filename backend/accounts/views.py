@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+import tempfile
+
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
 from django.db.models import Count
+from django.http import FileResponse
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
@@ -17,7 +21,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .models import WelcomeLetter
-from .permissions import IsAdmin
+from .permissions import IsAdmin, IsSuperuser
 from .serializers import (
     AdminUserCreateSerializer,
     AdminUserUpdateSerializer,
@@ -31,10 +35,12 @@ from .serializers import (
     get_welcome_config,
 )
 from .services import build_reset_link, send_reset_email
+from .services_backup import backup_filename, write_backup
 from .services_email import WelcomeEmailError, send_welcome_email
 from .welcome_templates import SALUTATION_TOKEN, default_salutation
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @method_decorator(ensure_csrf_cookie, name='dispatch')
@@ -350,3 +356,28 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         user.set_password(new_password)
         user.save(update_fields=['password'])
         return Response({'detail': 'تم تعيين كلمة المرور بنجاح.'})
+
+
+class DatabaseBackupView(APIView):
+    """Download the whole database as a ``.sql`` backup. Superusers only: the
+    file carries every account's data, password hashes included."""
+
+    permission_classes = [IsSuperuser]
+
+    def get(self, request):
+        out = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
+        try:
+            write_backup(out)
+        except Exception:
+            out.close()
+            logger.exception('database_backup_failed user=%s', request.user.pk)
+            return Response(
+                {'detail': 'تعذّر إنشاء النسخة الاحتياطية.', 'error_type': 'backup_failed'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        size = out.tell()
+        out.seek(0)
+        logger.info('database_backup_downloaded user=%s bytes=%s', request.user.pk, size)
+        response = FileResponse(out, as_attachment=True, filename=backup_filename(), content_type='application/sql')
+        response['Cache-Control'] = 'no-store'
+        return response

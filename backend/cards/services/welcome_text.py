@@ -7,6 +7,7 @@ the card's own language appears beside it when the card is not Arabic:
     card printed in English         → Arabic + English
     card printed in German          → Arabic + German
     card printed in Arabic + English → Arabic + English
+    card printed in English + German → Arabic + German
 Both blocks travel in a SINGLE email, Arabic first.
 
 Letter text per language, in order of preference:
@@ -60,15 +61,19 @@ def card_languages(card) -> list[str]:
     first, then the card's own language when it is not Arabic.
 
     At most two blocks — a card printed in three languages still gets Arabic
-    plus its most prominent other language, because a three-block letter reads
-    as a form, not as correspondence.
+    plus one other language, because a three-block letter reads as a form, not
+    as correspondence. That other language is the most prominent non-English
+    one when the card has any (English + German → German), else English.
     """
     printed = [str(code).strip().lower() for code in (getattr(card, 'printed_languages', None) or [])]
     printed = [code for code in printed if code]
     if not printed:
         printed = _detect_from_text(card)
 
-    secondary = next((code for code in printed if code != PRIMARY_LANGUAGE), '')
+    # English is usually a card's "international" side (an English front with a
+    # German back), so the holder's own language wins over it when both appear.
+    others = [code for code in printed if code != PRIMARY_LANGUAGE]
+    secondary = next((code for code in others if code != SECONDARY_FALLBACK_LANGUAGE), '') or next(iter(others), '')
     if not secondary and PRIMARY_LANGUAGE not in printed:
         # Card language is unknown-but-not-Arabic; address it in English.
         secondary = SECONDARY_FALLBACK_LANGUAGE

@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminUserViewSet,
     ChangePasswordView,
+    DatabaseBackupView,
     CsrfView,
     ForgotPasswordView,
     LoginView,
@@ -62,6 +63,8 @@ admin_users_patterns = [
     path('admin/users/<int:pk>', admin_users_detail),
     path('admin/users/<int:pk>/reset-link', admin_users_reset),
     path('admin/users/<int:pk>/set-password', admin_users_setpw),
+    path('admin/backup', DatabaseBackupView.as_view()),
+    path('admin/backup/', DatabaseBackupView.as_view()),
 ]
 
 urlpatterns = auth_patterns + admin_users_patterns + router.urls

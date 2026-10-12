@@ -31,29 +31,13 @@ def _base_hash(card) -> str:
 
 def _live_base_hash(card) -> str:
     """Recompute the base hash from the card's *current* data (ignores the
-    stored hash). Cards with no identifying data stay ungrouped (return '')."""
-    from .normalization import build_duplicate_hash
+    stored hash), so only cards whose information ALL matches are grouped.
+    Cards with no identifying data stay ungrouped (return '')."""
+    from .normalization import build_duplicate_hash, has_card_identity
 
-    emails = list(getattr(card, 'emails', None) or [])
-    phones = list(getattr(card, 'mobile_numbers', None) or [])
-    website = (getattr(card, 'website', '') or '').strip()
-    person = (getattr(card, 'person_name', '') or getattr(card, 'person_name_ar', '')
-              or getattr(card, 'person_name_en', '') or '').strip()
-    company = (getattr(card, 'company_name', '') or getattr(card, 'company_name_ar', '')
-               or getattr(card, 'company_name_en', '') or '').strip()
-    if not (emails or phones or website or person or company):
+    if not has_card_identity(card):
         return ''
-    return build_duplicate_hash({
-        'emails': emails,
-        'mobile_numbers': phones,
-        'website': website,
-        'person_name': getattr(card, 'person_name', '') or '',
-        'person_name_ar': getattr(card, 'person_name_ar', '') or '',
-        'person_name_en': getattr(card, 'person_name_en', '') or '',
-        'company_name': getattr(card, 'company_name', '') or '',
-        'company_name_ar': getattr(card, 'company_name_ar', '') or '',
-        'company_name_en': getattr(card, 'company_name_en', '') or '',
-    })
+    return build_duplicate_hash(card)
 
 
 def merge_two(primary, dup) -> None:
