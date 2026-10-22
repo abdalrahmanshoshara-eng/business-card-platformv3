@@ -6,7 +6,7 @@ import AppShell from '@/components/AppShell';
 export const dynamic = 'force-dynamic';
 
 export const metadata = {
-  title: 'استخراج بيانات الكرت الشخصي – وزارة الاقتصاد والصناعة',
+  title: 'استخراج بيانات الكرت الشخصي – وزارة الصناعة والتجارة الداخلية',
   description: 'منصة رفع وبحث بيانات الكروت الشخصية',
 };
 
@@ -18,15 +18,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="site-header">
           <div className="header-overlay" aria-hidden="true"></div>
           <div className="header-inner">
-            <Link href="/upload" className="header-brand" aria-label="وزارة الاقتصاد والصناعة">
+            <Link href="/upload" className="header-brand" aria-label="وزارة الصناعة والتجارة الداخلية">
               {/* <div className="header-logo" aria-hidden="true">
-                <img src="/image.png" alt="وزارة الاقتصاد والصناعة" />              </div>
+                <img src="/image.png" alt="وزارة الصناعة والتجارة الداخلية" />              </div>
               <div>
-                <div className="header-title-ar">وزارة الاقتصاد والصناعة</div>
-                <div className="header-title-en">Ministry of Economy and Industry</div>
+                <div className="header-title-ar">وزارة الصناعة والتجارة الداخلية</div>
+                <div className="header-title-en">Ministry of Industry and Internal Trade</div>
               </div> */}
               <div className="header-logo"  aria-hidden="true">
-                <img src="/header-logo-ar.png" alt="وزارة الاقتصاد والصناعة" />              
+                <img src="/ministry-logo-header.svg" alt="وزارة الصناعة والتجارة الداخلية" />              
               </div>
             </Link>
             {/* <nav className="header-nav" aria-label="التنقل الرئيسي">

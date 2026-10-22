@@ -225,9 +225,9 @@ class WelcomeLanguageTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)  # ONE email, not two
         self.assertEqual(msg.subject, 'أهلاً | Message of Appreciation')
         self.assertIn('مرحبًا بك', msg.body)
-        self.assertIn('Ministry of Economy and Industry', msg.body)
+        self.assertIn('Ministry of Industry and Internal Trade', msg.body)
         # Arabic first, then the card's language.
-        self.assertLess(msg.body.index('مرحبًا بك'), msg.body.index('Ministry of Economy'))
+        self.assertLess(msg.body.index('مرحبًا بك'), msg.body.index('Ministry of Industry'))
 
     def test_bilingual_card_gets_both(self):
         card = make_card(self.user, ['both@corp.com'], printed_languages=['ar', 'en'])
@@ -241,7 +241,7 @@ class WelcomeLanguageTests(TestCase):
             msg = self.send(card)
         translate.assert_not_called()  # a reviewed German letter needs no API call
         self.assertIn('Dankschreiben', msg.subject)
-        self.assertIn('Ministerium für Wirtschaft und Industrie', msg.body)
+        self.assertIn('Ministerium für Industrie und Binnenhandel', msg.body)
         html = msg.alternatives[0][0]
         self.assertIn('dir="ltr" lang="de"', html)   # German block reads LTR…
         self.assertIn('dir="rtl" lang="ar"', html)   # …beside the Arabic one
@@ -278,7 +278,7 @@ class WelcomeLanguageTests(TestCase):
         with patch('cards.services.welcome_translate.translate_letter', return_value=None):
             msg = self.send(card)
         self.assertIn('Message of Appreciation', msg.subject)
-        self.assertIn('Ministry of Economy and Industry', msg.body)
+        self.assertIn('Ministry of Industry and Internal Trade', msg.body)
 
     def test_legacy_card_without_languages_is_detected_from_its_text(self):
         arabic = make_card(self.user, ['legacy-ar@corp.com'], person_name='أحمد', company_name='شركة النور')
@@ -398,15 +398,48 @@ class SalutationPlaceholderGuardTests(TestCase):
 class DefaultWelcomeLetterTests(TestCase):
     """The ministry's letter of appreciation is the default for every account."""
 
+    def test_every_language_names_the_ministry_of_industry_and_internal_trade(self):
+        from accounts.welcome_templates import DEFAULT_LETTERS
+        expected = {
+            'ar': 'وزارة الصناعة والتجارة الداخلية',
+            'en': 'Ministry of Industry and Internal Trade',
+            'fr': "Ministère de l'Industrie et du Commerce intérieur",
+            'de': 'Ministerium für Industrie und Binnenhandel',
+            'tr': 'Sanayi ve İç Ticaret Bakanlığı',
+            'ru': 'Министерство промышленности и внутренней торговли',
+            'es': 'Ministerio de Industria y Comercio Interior',
+            'zh': '工业和国内贸易部',
+        }
+        old_names = ('الاقتصاد والصناعة', 'Economy and Industry', 'Économie', 'Wirtschaft und Industrie',
+                     'Ekonomi ve Sanayi', 'Министерство экономики', 'Economía e Industria', '经济与工业部')
+        self.assertEqual(set(expected), set(DEFAULT_LETTERS))
+        for language, name in expected.items():
+            with self.subTest(language=language):
+                _, body = DEFAULT_LETTERS[language]
+                self.assertTrue(body.rstrip().endswith(name), body[-80:])  # the signature line
+                for old in old_names:
+                    self.assertNotIn(old, body)
+
+    def test_email_frame_carries_the_new_ministry_name(self):
+        from accounts.services_email import WelcomeSection, _welcome_html
+        sections = [WelcomeSection(subject='s', body='b'), WelcomeSection(subject='s', body='b', language='en', rtl=False)]
+        for has_logo in (True, False):
+            with self.subTest(has_logo=has_logo):
+                html = _welcome_html(sections, 'a@b.com', has_logo)
+                self.assertIn('وزارة الصناعة والتجارة الداخلية', html)
+                self.assertIn('Ministry of Industry and Internal Trade', html)
+                self.assertNotIn('الاقتصاد والصناعة', html)
+                self.assertNotIn('economy and industry', html.lower())
+
     def test_profile_api_returns_the_default_letter_in_both_languages(self):
         user = make_user('defaults')
         resp = auth_client(user).get('/api/auth/me')
         cfg = resp.data['welcome_email']
         self.assertEqual(cfg['welcome_subject'], 'رسالة شكر وتقدير')
         self.assertEqual(cfg['welcome_subject_en'], 'Message of Appreciation')
-        self.assertIn('وزارة الاقتصاد والصناعة', cfg['welcome_message'])
+        self.assertIn('وزارة الصناعة والتجارة الداخلية', cfg['welcome_message'])
         self.assertNotIn('نائب وزير', cfg['welcome_message'])
-        self.assertIn('Ministry of Economy and Industry', cfg['welcome_message_en'])
+        self.assertIn('Ministry of Industry and Internal Trade', cfg['welcome_message_en'])
         self.assertNotIn('Deputy Minister', cfg['welcome_message_en'])
         # The salutation placeholder is exposed so the owner can keep or drop it.
         self.assertIn('{{salutation}}', cfg['welcome_message'])
@@ -417,7 +450,7 @@ class DefaultWelcomeLetterTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertTrue(resp.data['can_edit_letter'])
         self.assertFalse(resp.data['is_customized'])
-        self.assertIn('وزارة الاقتصاد والصناعة', resp.data['welcome_message'])
+        self.assertIn('وزارة الصناعة والتجارة الداخلية', resp.data['welcome_message'])
 
     def test_test_send_stays_admin_only(self):
         # Sending to an arbitrary address is a mail-config diagnostic, not part
@@ -514,7 +547,7 @@ class ResetWelcomeLetterTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.data)
         self.assertFalse(resp.data['is_customized'])
         self.assertEqual(resp.data['welcome_subject'], 'رسالة شكر وتقدير')
-        self.assertIn('وزارة الاقتصاد والصناعة', resp.data['welcome_message'])
+        self.assertIn('وزارة الصناعة والتجارة الداخلية', resp.data['welcome_message'])
         self.assertEqual(resp.data['welcome_subject_en'], 'Message of Appreciation')
 
     def test_reset_drops_the_row_rather_than_copying_the_template(self):

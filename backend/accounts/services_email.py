@@ -129,14 +129,14 @@ def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: b
 
     if has_logo:
         brand = (
-            f'<img src="cid:{_LOGO_CID}" alt="وزارة الاقتصاد والصناعة" '
+            f'<img src="cid:{_LOGO_CID}" alt="وزارة الصناعة والتجارة الداخلية" '
             'height="54" style="height:54px;width:auto;display:block;margin:0 auto">'
         )
     else:
         brand = (
-            '<div style="font-size:20px;font-weight:800;color:#f7f3e8">وزارة الاقتصاد والصناعة</div>'
+            '<div style="font-size:20px;font-weight:800;color:#f7f3e8">وزارة الصناعة والتجارة الداخلية</div>'
             '<div style="font-size:11px;letter-spacing:.14em;color:#d9b877;margin-top:4px">'
-            'MINISTRY OF ECONOMY AND INDUSTRY</div>'
+            'MINISTRY OF INDUSTRY AND INTERNAL TRADE</div>'
         )
 
     blocks = []
@@ -177,11 +177,11 @@ def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: b
             </tr>
           </table>"""
 
-    footer = 'الجمهورية العربية السورية · وزارة الاقتصاد والصناعة'
+    footer = 'الجمهورية العربية السورية · وزارة الصناعة والتجارة الداخلية'
     if has_latin:
         footer += (
             '<div style="margin-top:4px">Syrian Arab Republic · '
-            'Ministry of Economy and Industry</div>'
+            'Ministry of Industry and Internal Trade</div>'
         )
     note = 'هذه الرسالة موجّهة إليك شخصياً. يمكنك الردّ عليها مباشرةً للوصول إلى المُرسِل.'
     if has_latin:
