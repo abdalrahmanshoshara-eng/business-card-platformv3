@@ -6,6 +6,7 @@ import re
 from rest_framework import serializers
 
 from .models import BusinessCard, CompanyDomainEnrichment
+from .services.card_messages import MAX_RECIPIENTS
 from .services.normalization import normalize_website
 
 
@@ -84,3 +85,30 @@ class CompanyDomainEnrichmentSerializer(serializers.ModelSerializer):
             'status', 'model_name', 'enriched_at', 'refresh_after', 'last_error',
         ]
         read_only_fields = fields
+
+
+class CardMessageSerializer(serializers.Serializer):
+    """Input for sending one free-text message to several cards."""
+
+    card_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        min_length=1,
+        max_length=MAX_RECIPIENTS,
+        error_messages={
+            'min_length': 'اختر كرتًا واحدًا على الأقل.',
+            'max_length': f'يمكن الإرسال إلى {MAX_RECIPIENTS} كرتًا كحد أقصى في المرة الواحدة.',
+            'empty': 'اختر كرتًا واحدًا على الأقل.',
+        },
+    )
+    subject = serializers.CharField(
+        max_length=200,
+        error_messages={'blank': 'عنوان الرسالة مطلوب.', 'required': 'عنوان الرسالة مطلوب.'},
+    )
+    body = serializers.CharField(
+        max_length=10000,
+        error_messages={'blank': 'نص الرسالة مطلوب.', 'required': 'نص الرسالة مطلوب.'},
+    )
+
+    def validate_subject(self, value: str) -> str:
+        # A mail header is one line; collapse any newlines the user pasted.
+        return re.sub(r'\s+', ' ', value).strip()

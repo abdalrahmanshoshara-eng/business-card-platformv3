@@ -115,6 +115,7 @@ REST_FRAMEWORK = {
         'auth_register': os.getenv('THROTTLE_REGISTER', '5/min'),
         'auth_forgot': os.getenv('THROTTLE_FORGOT', '5/min'),
         'welcome_test': os.getenv('THROTTLE_WELCOME_TEST', '20/min'),
+        'card_message': os.getenv('THROTTLE_CARD_MESSAGE', '10/min'),
     },
 }
 
