@@ -3,10 +3,7 @@ import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import PageHero from "@/components/PageHero";
-import WelcomePrompt from "@/components/WelcomePrompt";
-import { useAuth } from "@/features/auth/AuthProvider";
 import {
   BusinessCard,
   combineBilingual,
@@ -15,6 +12,13 @@ import {
   toMediaUrl,
 } from "@/lib/api";
 import { INVESTMENT_TYPES } from "@/lib/constants";
+import ComposeMessageModal from "@/features/messages/ComposeMessageModal";
+import {
+  MAX_RECIPIENTS,
+  pageSelectionState,
+  setPageSelection,
+  toggleCard,
+} from "@/features/messages/selection";
 
 type Stats = {
   total: number;
@@ -230,11 +234,7 @@ function displayInvestment(card: BusinessCard) {
 }
 
 function DashboardPageInner() {
-  const { user } = useAuth();
-  const router = useRouter();
-  const welcomeConfigured = !!user?.welcome_email?.sender_email;
   const [welcomeBusyId, setWelcomeBusyId] = useState<number | null>(null);
-  const [welcomeSetupOpen, setWelcomeSetupOpen] = useState(false);
   const [welcomeErrorMsg, setWelcomeErrorMsg] = useState("");
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
@@ -265,6 +265,9 @@ function DashboardPageInner() {
   const [imageError, setImageError] = useState("");
   const [deleteCard, setDeleteCard] = useState<BusinessCard | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Cards picked for a custom message; kept across pages and filters.
+  const [selected, setSelected] = useState<Map<number, BusinessCard>>(() => new Map());
+  const [composeOpen, setComposeOpen] = useState(false);
 
   const filterQuery = useMemo(() => {
     const params = new URLSearchParams();
@@ -309,6 +312,11 @@ function DashboardPageInner() {
   const totalPages = Math.max(1, Math.ceil(totalResults / pageSize));
   const pageStart = totalResults ? (page - 1) * pageSize + 1 : 0;
   const pageEnd = Math.min(page * pageSize, totalResults);
+  const pageSelection = pageSelectionState(selected, cards);
+
+  function openCompose() {
+    setComposeOpen(true);
+  }
 
   async function load() {
     setLoading(true);
@@ -356,6 +364,12 @@ function DashboardPageInner() {
     try {
       await fetchJson(`/cards/${deleteCard.id}/`, { method: "DELETE" });
       setCards((current) => current.filter((c) => c.id !== deleteCard.id));
+      setSelected((current) => {
+        if (!current.has(deleteCard.id)) return current;
+        const next = new Map(current);
+        next.delete(deleteCard.id);
+        return next;
+      });
       setDeleteCard(null);
       await Promise.all([load(), loadCategoryStats()]);
     } catch (e: any) {
@@ -375,11 +389,6 @@ function DashboardPageInner() {
   async function handleWelcome(card: BusinessCard) {
     // Already sent → not actionable (the cell renders a static chip, not a button).
     if (card.welcome_status === "sent") return;
-    // Not configured → show the setup popup (offer to set the sender email).
-    if (!welcomeConfigured) {
-      setWelcomeSetupOpen(true);
-      return;
-    }
     if (welcomeBusyId) return;
     setWelcomeBusyId(card.id);
     setWelcomeErrorMsg("");
@@ -747,10 +756,44 @@ function DashboardPageInner() {
         {error && <p className="status-box error">{error}</p>}
       </section>
 
+      {selected.size > 0 && (
+        <div className="selection-bar" role="region" aria-label="الكروت المحددة">
+          <span>
+            تم تحديد <strong>{selected.size}</strong> {selected.size === 1 ? "كرت" : "كروت"}
+            {selected.size > MAX_RECIPIENTS && (
+              <span className="selection-bar-warning"> — الحد الأقصى {MAX_RECIPIENTS} في المرة الواحدة</span>
+            )}
+          </span>
+          <div className="selection-bar-actions">
+            <button type="button" className="btn-green" onClick={openCompose}>
+              ✉️ كتابة رسالة
+            </button>
+            <button type="button" className="btn-small" onClick={() => setSelected(new Map())}>
+              إلغاء التحديد
+            </button>
+          </div>
+        </div>
+      )}
+
       <section className="table-wrap" aria-label="جدول بيانات الكروت">
         <table className="dashboard-table">
           <thead>
             <tr>
+              <th className="select-cell">
+                <input
+                  type="checkbox"
+                  aria-label="تحديد كل كروت هذه الصفحة"
+                  title="تحديد كل كروت هذه الصفحة"
+                  checked={pageSelection === "all"}
+                  ref={(el) => {
+                    if (el) el.indeterminate = pageSelection === "some";
+                  }}
+                  disabled={!cards.length}
+                  onChange={(event) =>
+                    setSelected((cur) => setPageSelection(cur, cards, event.target.checked))
+                  }
+                />
+              </th>
               <th>الكرت</th>
               <th>الشركة والنشاط</th>
               <th>بيانات الاتصال</th>
@@ -762,7 +805,15 @@ function DashboardPageInner() {
           </thead>
           <tbody>
             {cards.map((card) => (
-              <tr key={card.id}>
+              <tr key={card.id} className={selected.has(card.id) ? "row-selected" : undefined}>
+                <td data-label="تحديد" className="select-cell">
+                  <input
+                    type="checkbox"
+                    aria-label={`تحديد الكرت #${card.sequence_number}`}
+                    checked={selected.has(card.id)}
+                    onChange={() => setSelected((cur) => toggleCard(cur, card))}
+                  />
+                </td>
                 {/* الشخص: الرقم التسلسلي + الاسم + المنصب */}
                 <td data-label="الكرت" className="primary-cell">
                   <div className="cell-stack">
@@ -873,7 +924,7 @@ function DashboardPageInner() {
             ))}
             {!cards.length && (
               <tr>
-                <td colSpan={7} className="empty-cell">
+                <td colSpan={8} className="empty-cell">
                   {loading
                     ? "جاري تحميل البيانات..."
                     : "لا توجد بيانات مطابقة للبحث."}
@@ -908,12 +959,14 @@ function DashboardPageInner() {
         </nav>
       )}
 
-      <WelcomePrompt
-        open={welcomeSetupOpen}
-        mode="setup"
-        onSetupEmail={() => router.push('/profile')}
-        onClose={() => setWelcomeSetupOpen(false)}
-      />
+      {composeOpen && (
+        <ComposeMessageModal
+          cards={[...selected.values()]}
+          onRemove={(card) => setSelected((cur) => toggleCard(cur, card))}
+          onSent={() => setSelected(new Map())}
+          onClose={() => setComposeOpen(false)}
+        />
+      )}
 
       {welcomeErrorMsg && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="فشل إرسال الترحيب">

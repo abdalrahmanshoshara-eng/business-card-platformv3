@@ -16,11 +16,6 @@ from .services_email import (
 
 User = get_user_model()
 
-# Saved on the profile. The letter itself has its own model and endpoint (see
-# WelcomeLetter) so it can be edited and reset independently. The actual From
-# account is a single platform email in settings, not per user.
-WELCOME_CONFIG_FIELDS = ('sender_email',)
-
 # Keys of the platform letter, as exposed by the API.
 LETTER_API_FIELDS = ('welcome_subject', 'welcome_message', 'welcome_subject_en', 'welcome_message_en')
 
@@ -39,25 +34,16 @@ def effective_letter(user=None) -> dict:
 
 
 def get_welcome_config(user) -> dict:
-    """Everything the welcome screens need: the user's sender email and their
-    own letter as it will be sent."""
-    profile = getattr(user, 'profile', None)
+    """Everything the welcome screens need: the user's own letter as it will
+    be sent. Mail always goes from the platform address, so there is nothing
+    per user to configure."""
     return {
-        'sender_email': profile.sender_email if profile else '',
-        'configured': profile.has_welcome_config() if profile else False,
         # Every user owns their letter, so anyone signed in may edit it. Kept in
         # the payload because the UI branches on it.
         'can_edit_letter': True,
         'can_test_send': is_admin(user),
         **effective_letter(user),
     }
-
-
-def set_welcome_config(user, data: dict) -> None:
-    """Persist the welcome-email config. Only provided keys change."""
-    defaults = {field: data[field] for field in WELCOME_CONFIG_FIELDS if field in data}
-    if defaults:
-        Profile.objects.update_or_create(user=user, defaults=defaults)
 
 
 class WelcomeLetterSerializer(serializers.Serializer):
@@ -195,17 +181,14 @@ class LoginSerializer(serializers.Serializer):
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
-    """A user editing their own profile: name, email, phone, welcome-email config."""
+    """A user editing their own profile: name, email, phone."""
 
     phone = serializers.CharField(required=False, allow_blank=True, max_length=30)
-    # The only welcome setting a user owns; the letter is edited separately and
-    # by admins only.
-    sender_email = serializers.EmailField(required=False, allow_blank=True)
 
     class Meta:
         model = User
         fields = [
-            'first_name', 'last_name', 'email', 'phone', 'sender_email',
+            'first_name', 'last_name', 'email', 'phone',
         ]
 
     def validate(self, attrs):
@@ -224,16 +207,10 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('البريد الإلكتروني مستخدم بالفعل.')
         return value
 
-    def validate_sender_email(self, value):
-        return normalize_email(value)
-
     def update(self, instance, validated_data):
         phone = validated_data.pop('phone', None)
-        welcome = {field: validated_data.pop(field) for field in WELCOME_CONFIG_FIELDS if field in validated_data}
         instance = super().update(instance, validated_data)
         set_phone(instance, phone)
-        if welcome:
-            set_welcome_config(instance, welcome)
         return instance
 
 

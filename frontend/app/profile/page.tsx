@@ -1,7 +1,6 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import Link from 'next/link';
 import PageHero from '@/components/PageHero';
 import { ApiError } from '@/lib/api';
 import { RequireAuth } from '@/features/auth/Guard';
@@ -19,12 +18,6 @@ function ProfileInner() {
   const [pwdMsg, setPwdMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingPwd, setSavingPwd] = useState(false);
 
-  // The sender email is the only welcome setting a user owns; the letter itself
-  // lives on its own page (/welcome-letter) because it is platform-wide.
-  const [welcome, setWelcome] = useState({ sender_email: '' });
-  const [welcomeMsg, setWelcomeMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [savingWelcome, setSavingWelcome] = useState(false);
-
   useEffect(() => {
     if (user) {
       setProfile({
@@ -33,27 +26,8 @@ function ProfileInner() {
         email: user.email,
         phone: user.phone || '',
       });
-      const w = user.welcome_email;
-      if (w) {
-        setWelcome({ sender_email: w.sender_email || '' });
-      }
     }
   }, [user]);
-
-  async function saveWelcome(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setWelcomeMsg(null);
-    setSavingWelcome(true);
-    try {
-      const updated = await updateProfile(welcome);
-      setUser(updated);
-      setWelcomeMsg({ type: 'success', text: 'تم حفظ إعدادات رسالة الترحيب.' });
-    } catch (err) {
-      setWelcomeMsg({ type: 'error', text: err instanceof ApiError ? err.message : 'تعذّر حفظ الإعدادات.' });
-    } finally {
-      setSavingWelcome(false);
-    }
-  }
 
   async function saveProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -148,28 +122,6 @@ function ProfileInner() {
           </form>
         </div>
 
-        <div className="card profile-card-main" style={{ gridColumn: '1 / -1' }}>
-          <div className="section-head">
-            <h2>بريد المُرسِل</h2>
-            <Link href="/welcome-letter" className="download">نصّ رسالة الترحيب</Link>
-          </div>
-          <p style={{ color: 'var(--text-muted)', marginTop: 0 }}>
-            تُرسَل رسالة الترحيب عبر بريد المنصة، ويظهر بريدك أدناه كمُرسِل وكعنوان للرد.
-            نصّ الرسالة موحّد للمنصة وله صفحته الخاصة.
-          </p>
-          <form onSubmit={saveWelcome}>
-            <label htmlFor="sender_email">بريد المُرسِل</label>
-            <input id="sender_email" type="email" dir="ltr" value={welcome.sender_email}
-              onChange={(e) => setWelcome({ sender_email: e.target.value })}
-              placeholder="you@example.com" />
-            {welcomeMsg && <div className={`status-box ${welcomeMsg.type}`} style={{ marginTop: 12 }}>{welcomeMsg.text}</div>}
-            <div className="button-row">
-              <button type="submit" className="btn btn-gold" disabled={savingWelcome}>
-                {savingWelcome ? 'جارٍ الحفظ…' : 'حفظ بريد المُرسِل'}
-              </button>
-            </div>
-          </form>
-        </div>
       </div>
     </main>
   );

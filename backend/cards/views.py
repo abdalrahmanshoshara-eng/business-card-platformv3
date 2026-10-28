@@ -23,7 +23,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import BusinessCard, CompanyDomainEnrichment, ExtractionRequest, GeminiUsageLog
-from .serializers import BusinessCardSerializer, CompanyDomainEnrichmentSerializer
+from .serializers import BusinessCardSerializer, CardMessageSerializer, CompanyDomainEnrichmentSerializer
 from .services.extractor import EXTRACTION_SCHEMA_VERSION, ExtractionError, extract_business_card
 from .services.image_processing import preprocess_image
 from .services.card_data import INVESTMENT_TYPE_CHOICES, merge_missing_card_data, merge_missing_card_images, prepare_card_data
@@ -41,6 +41,7 @@ from .services.usage import log_gemini_usage
 from .services.enrichment import get_cached_enrichment, run_enrichment
 from accounts.services_email import WelcomeEmailError, send_welcome_email
 from .services.welcome_text import build_welcome_sections
+from .services.card_messages import STATUS_SENT, send_message_to_cards
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,18 @@ def _validation_error_response(exc) -> Response:
     return Response({'detail': message, 'error_type': 'validation_error', 'errors': detail}, status=status.HTTP_400_BAD_REQUEST)
 
 
+def _flatten_errors(errors):
+    """Yield the leaf messages of a DRF error structure (lists nest per item)."""
+    if isinstance(errors, dict):
+        for value in errors.values():
+            yield from _flatten_errors(value)
+    elif isinstance(errors, (list, tuple)):
+        for value in errors:
+            yield from _flatten_errors(value)
+    else:
+        yield errors
+
+
 def _prepare_data(data: dict) -> dict:
     return prepare_card_data(data)
 
@@ -87,6 +100,8 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
     queryset = BusinessCard.objects.all().order_by('-sequence_number', '-id')
     serializer_class = BusinessCardSerializer
     pagination_class = BusinessCardPagination
+    # No scope = not throttled; actions that send email set their own scope.
+    throttle_scope = None
 
     def _scoped(self):
         """Ownership-scoped base queryset for the current request user."""
@@ -680,13 +695,6 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='send-welcome')
     def send_welcome(self, request, pk=None):
         card = self.get_object()  # ownership-scoped (404 for others' cards)
-        profile = getattr(request.user, 'profile', None)
-        if profile is None or not profile.has_welcome_config():
-            return Response(
-                {'detail': 'يرجى ضبط إعدادات رسالة الترحيب (بريد المُرسِل وكلمة المرور والنص) في ملفك الشخصي أولاً.',
-                 'error_type': 'welcome_not_configured'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         card_emails = [str(e).strip() for e in (card.emails or []) if str(e).strip()]
         requested = (request.data.get('to') or '').strip()
@@ -725,7 +733,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             logger.exception('welcome_sections_failed card_id=%s', card.id)
             sections = None
         try:
-            send_welcome_email(profile, to_email=to_email, sections=sections)
+            send_welcome_email(to_email=to_email, sections=sections)
         except WelcomeEmailError as exc:
             card.welcome_status = BusinessCard.WELCOME_FAILED
             card.welcome_sent_to = to_email
@@ -746,6 +754,28 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
         return Response(
             {'detail': f'تم إرسال رسالة الترحيب إلى {to_email}.', 'welcome_status': 'sent',
              'card': BusinessCardSerializer(card, context={'request': request}).data},
+            status=status.HTTP_200_OK,
+        )
+
+    # ── Custom message to selected cards ────────────────────────────────────
+    @action(detail=False, methods=['post'], url_path='send-message', throttle_scope='card_message')
+    def send_message(self, request):
+        serializer = CardMessageSerializer(data=request.data)
+        if not serializer.is_valid():
+            # The fields are named in the UI, so show the messages without the
+            # "field:" prefix _validation_error_response adds.
+            messages = [str(m) for errors in serializer.errors.values() for m in _flatten_errors(errors)]
+            return Response(
+                {'detail': ' '.join(messages) or 'بيانات غير صالحة.', 'error_type': 'validation_error',
+                 'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        data = serializer.validated_data
+        results = send_message_to_cards(request.user, data['card_ids'], data['subject'], data['body'])
+        sent = sum(r['status'] == STATUS_SENT for r in results)
+        return Response(
+            {'detail': f'تم إرسال الرسالة إلى {sent} من {len(results)}.',
+             'sent': sent, 'total': len(results), 'results': results},
             status=status.HTTP_200_OK,
         )
 

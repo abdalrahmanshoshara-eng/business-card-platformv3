@@ -1,12 +1,10 @@
 """Welcome-email sending.
 
 Delivery always uses ONE platform mail account configured in .env
-(settings.WELCOME_FROM_EMAIL + EMAIL_* for the SMTP connection). Each user only
-sets their sender email, a subject and a message. The From header shows the
-user's email as the display name over the platform address, and Reply-To is the
-user's email so replies reach them:
-    From:     "<sender_email>" <WELCOME_FROM_EMAIL>
-    Reply-To: <sender_email>
+(settings.WELCOME_FROM_EMAIL + EMAIL_* for the SMTP connection), and that
+address is the only sender shown — the From header carries it alone, with no
+per-user display name or Reply-To, so replies reach the platform mailbox:
+    From:     <WELCOME_FROM_EMAIL>
 
 The ministry logo is embedded inline (CID) so it appears in the email header.
 
@@ -23,7 +21,6 @@ import logging
 import re
 from dataclasses import dataclass, replace
 from email.mime.image import MIMEImage
-from email.utils import formataddr
 from functools import lru_cache
 from pathlib import Path
 
@@ -115,17 +112,15 @@ def _without_placeholder(section: WelcomeSection) -> WelcomeSection:
     ))
 
 
-def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: bool) -> str:
+def _welcome_html(sections: list[WelcomeSection], has_logo: bool) -> str:
     """A polished HTML body carrying the platform's visual identity: a green
     header bar with the ministry logo and a gold rule, so the message reads as
-    coming from the ministry, while still framing the user as the sender.
+    coming from the ministry.
 
     Each section is rendered in its own direction, so an Arabic block stays RTL
     while an English/German block beside it reads LTR."""
     primary = sections[0] if sections else WelcomeSection(subject='', body='')
     has_latin = any(not s.rtl for s in sections)
-    initial = escape((sender_email[:1] or '?').upper())
-    sender = escape(sender_email)
 
     if has_logo:
         brand = (
@@ -161,31 +156,15 @@ def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: b
         )
     body_html = ''.join(blocks)
 
-    sender_block = ''
-    if sender:
-        label = 'مُرسَلة من' + (' · Sent by' if has_latin else '')
-        sender_block = f"""
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:28px;border-top:1px solid #e6ded0;padding-top:18px">
-            <tr>
-              <td style="width:46px;vertical-align:middle">
-                <div style="width:44px;height:44px;border-radius:50%;background:#0f5a4e;color:#f4e9cf;font-weight:800;font-size:18px;text-align:center;line-height:44px">{initial}</div>
-              </td>
-              <td style="vertical-align:middle;padding-inline-start:12px">
-                <div style="font-size:13px;color:#6b6252">{label}</div>
-                <div style="font-size:15px;font-weight:800;color:#0f5a4e;direction:ltr;text-align:right">{sender}</div>
-              </td>
-            </tr>
-          </table>"""
-
     footer = 'الجمهورية العربية السورية · وزارة الصناعة والتجارة الداخلية'
     if has_latin:
         footer += (
             '<div style="margin-top:4px">Syrian Arab Republic · '
             'Ministry of Industry and Internal Trade</div>'
         )
-    note = 'هذه الرسالة موجّهة إليك شخصياً. يمكنك الردّ عليها مباشرةً للوصول إلى المُرسِل.'
+    note = 'هذه الرسالة موجّهة إليك شخصياً. يمكنك الردّ عليها مباشرةً للتواصل مع الوزارة.'
     if has_latin:
-        note += '<br>This message is addressed to you personally. Reply directly to reach the sender.'
+        note += '<br>This message is addressed to you personally. Reply directly to reach the ministry.'
 
     root_dir = 'rtl' if primary.rtl else 'ltr'
     root_lang = escape(primary.language or 'ar')
@@ -200,7 +179,6 @@ def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: b
         <tr><td style="height:4px;background:linear-gradient(90deg,#0f5a4e,#c7a66b)"></td></tr>
         <tr><td style="padding:32px 30px 26px">
           {body_html}
-          {sender_block}
         </td></tr>
         <tr><td style="background:#f7f4ec;padding:14px 24px;text-align:center;font-size:12px;color:#8a8272;border-top:1px solid #ece5d6">
           {footer}
@@ -213,16 +191,14 @@ def _welcome_html(sections: list[WelcomeSection], sender_email: str, has_logo: b
 
 
 def send_welcome_email(
-    profile,
     *,
     to_email: str,
     subject: str = '',
     body: str = '',
     sections: list[WelcomeSection] | None = None,
 ) -> None:
-    """Send the message to ``to_email`` from the single platform address, showing
-    the profile owner's email as From display name + Reply-To, with the ministry
-    logo embedded inline. Raises WelcomeEmailError on failure (user-safe).
+    """Send the message to ``to_email`` from the single platform address, with
+    the ministry logo embedded inline. Raises WelcomeEmailError on failure (user-safe).
 
     Pass either ``sections`` (one block per language) or a single
     ``subject``/``body`` pair, which is treated as one Arabic block.
@@ -248,21 +224,16 @@ def send_welcome_email(
     mail_subject = combine_subjects(sections) or DEFAULT_WELCOME_SUBJECT
     mail_body = combine_bodies(sections)
 
-    user_email = (getattr(profile, 'sender_email', '') or '').strip()
-    # formataddr quotes the display name so an email-like name (contains '@') is
-    # a valid header instead of breaking the address parser.
-    from_email = formataddr((user_email, platform_from)) if user_email else platform_from
     logo = _logo_bytes()
     try:
         message = EmailMultiAlternatives(
             subject=mail_subject,
             body=mail_body,  # plain-text fallback = the message as-is
-            from_email=from_email,
+            from_email=platform_from,
             to=[to_email],
-            reply_to=[user_email] if user_email else None,
             connection=get_connection(),  # platform default (EMAIL_* settings)
         )
-        message.attach_alternative(_welcome_html(sections, user_email, bool(logo)), 'text/html')
+        message.attach_alternative(_welcome_html(sections, bool(logo)), 'text/html')
         if logo:
             image = MIMEImage(logo)
             image.add_header('Content-ID', f'<{_LOGO_CID}>')

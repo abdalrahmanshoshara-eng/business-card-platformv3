@@ -3,11 +3,9 @@ import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { FormEvent, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import PageHero from '@/components/PageHero';
 import WelcomePrompt from '@/components/WelcomePrompt';
 import CardCamera, { liveCameraSupported } from '@/components/CardCamera';
-import { useAuth } from '@/features/auth/AuthProvider';
 import {
   BusinessCard,
   EnrichmentResponse,
@@ -65,9 +63,6 @@ const REVIEW_FIELD_LABELS: Record<string, string> = {
 };
 
 function UploadPageInner() {
-  const { user } = useAuth();
-  const router = useRouter();
-  const welcomeConfigured = !!user?.welcome_email?.sender_email;
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const frontCameraRef = useRef<HTMLInputElement>(null);
@@ -482,10 +477,8 @@ function UploadPageInner() {
 
       <WelcomePrompt
         open={welcomePromptOpen}
-        mode={welcomeConfigured ? 'confirm' : 'setup'}
         busy={welcomeSending}
         onConfirm={doSendWelcome}
-        onSetupEmail={() => router.push('/profile')}
         onClose={() => setWelcomePromptOpen(false)}
       />
 

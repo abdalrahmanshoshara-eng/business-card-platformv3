@@ -1,9 +1,7 @@
 import { fetchJson, ensureCsrf } from '@/lib/api';
 
 export type WelcomeEmailConfig = {
-  // The only welcome setting a user owns.
-  sender_email: string;
-  configured: boolean;
+  // Mail always goes from the platform address; nothing to configure here.
   // This account's own letter: Arabic (primary) plus the secondary-language
   // letter, sent side by side when the recipient's card is not Arabic. Blank
   // fields fall back to the ministry default.
@@ -39,11 +37,6 @@ export type AuthUser = {
   last_login?: string | null;
   welcome_email?: WelcomeEmailConfig;
 };
-
-// Fields accepted when saving the welcome-email config on a profile.
-export type WelcomeEmailUpdate = Partial<{
-  sender_email: string;
-}>;
 
 export function isAdmin(user: AuthUser | null): boolean {
   return !!user && (user.is_staff || user.is_superuser);
@@ -84,7 +77,7 @@ export async function register(payload: RegisterPayload): Promise<AuthUser> {
   });
 }
 
-export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'email' | 'phone'>> & WelcomeEmailUpdate): Promise<AuthUser> {
+export async function updateProfile(payload: Partial<Pick<AuthUser, 'first_name' | 'last_name' | 'email' | 'phone'>>): Promise<AuthUser> {
   return fetchJson<AuthUser>('/auth/profile', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

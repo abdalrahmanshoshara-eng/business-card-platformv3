@@ -60,23 +60,17 @@ def make_admin(username):
 
 
 class ProfileConfigApiTests(TestCase):
-    """A regular user owns exactly one welcome setting: the sender email."""
+    """Mail always goes from the platform address, so a user has no sender
+    setting to save."""
 
-    def test_saves_sender_email(self):
+    def test_profile_no_longer_takes_a_sender_email(self):
         user = make_user('alice')
         resp = auth_client(user).patch(
             '/api/auth/profile', {'sender_email': 'alice@example.com'}, format='json',
         )
         self.assertEqual(resp.status_code, 200, resp.data)
-        cfg = resp.data['welcome_email']
-        self.assertEqual(cfg['sender_email'], 'alice@example.com')
-        self.assertTrue(cfg['configured'])
-        self.assertEqual(Profile.objects.get(user=user).sender_email, 'alice@example.com')
-
-    def test_not_configured_until_sender_email_set(self):
-        user = make_user('bob')
-        resp = auth_client(user).patch('/api/auth/profile', {'phone': '0900'}, format='json')
-        self.assertFalse(resp.data['welcome_email']['configured'])
+        self.assertNotIn('sender_email', resp.data['welcome_email'])
+        self.assertFalse(Profile.objects.filter(user=user, sender_email='alice@example.com').exists())
 
     def test_profile_endpoint_refuses_letter_fields(self):
         # The letter has its own endpoint. Rejected outright rather than ignored,
@@ -106,19 +100,18 @@ class SendWelcomeApiTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         msg = mail.outbox[0]
         self.assertEqual(msg.to, ['recipient@corp.com'])
-        # Always sent FROM the single platform address, with the user's email as
-        # display name + Reply-To.
-        self.assertIn('platform@site.com', msg.from_email)
-        self.assertIn('sender@example.com', msg.from_email)
-        self.assertEqual(msg.reply_to, ['sender@example.com'])
+        # Always sent FROM the single platform address alone — a leftover
+        # per-user sender email is neither display name nor Reply-To.
+        self.assertEqual(msg.from_email, 'platform@site.com')
+        self.assertEqual(msg.reply_to, [])
         # Arabic-only card → one Arabic block, sent exactly as the admin wrote it.
         self.assertEqual(msg.subject, 'أهلاً')
         self.assertEqual(msg.body, 'مرحبًا بك')
-        # A styled HTML alternative is attached and frames the user's email as sender.
+        # A styled HTML alternative is attached and doesn't name the user.
         self.assertTrue(msg.alternatives)
         html, mime = msg.alternatives[0]
         self.assertEqual(mime, 'text/html')
-        self.assertIn('sender@example.com', html)
+        self.assertNotIn('sender@example.com', html)
         self.assertIn('مرحبًا بك', html)
         # Ministry identity: header references the inline logo (CID) and the
         # logo image is embedded so external recipients can see it.
@@ -138,13 +131,14 @@ class SendWelcomeApiTests(TestCase):
         self.assertEqual(resent.data['welcome_status'], 'sent')
         self.assertEqual(len(mail.outbox), 2)
 
-    def test_requires_configuration(self):
+    def test_sends_without_any_sender_setup(self):
         user = make_user('dave')  # no profile config
         client = auth_client(user)
         card = make_card(user, ['x@y.com'])
         resp = client.post(f'/api/cards/{card.id}/send-welcome', {}, format='json')
-        self.assertEqual(resp.status_code, 400)
-        self.assertEqual(resp.data['error_type'], 'welcome_not_configured')
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['welcome_status'], 'sent')
+        self.assertEqual(mail.outbox[0].from_email, 'platform@site.com')
 
     def test_no_recipient_email(self):
         card = make_card(self.user, [])
@@ -425,7 +419,7 @@ class DefaultWelcomeLetterTests(TestCase):
         sections = [WelcomeSection(subject='s', body='b'), WelcomeSection(subject='s', body='b', language='en', rtl=False)]
         for has_logo in (True, False):
             with self.subTest(has_logo=has_logo):
-                html = _welcome_html(sections, 'a@b.com', has_logo)
+                html = _welcome_html(sections, has_logo)
                 self.assertIn('وزارة الصناعة والتجارة الداخلية', html)
                 self.assertIn('Ministry of Industry and Internal Trade', html)
                 self.assertNotIn('الاقتصاد والصناعة', html)

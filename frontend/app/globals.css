@@ -1658,14 +1658,16 @@ td {
 .users-table th:nth-child(7) { width: 12%; }
 .users-table th:nth-child(8) { width: 14%; }
 
-/* Dashboard: 7 grouped columns, weighted by how much each one has to say. */
-.dashboard-table th:nth-child(1) { width: 19%; }
-.dashboard-table th:nth-child(2) { width: 23%; }
-.dashboard-table th:nth-child(3) { width: 20%; }
-.dashboard-table th:nth-child(4) { width: 7%; }
-.dashboard-table th:nth-child(5) { width: 10%; }
-.dashboard-table th:nth-child(6) { width: 11%; }
-.dashboard-table th:nth-child(7) { width: 10%; }
+/* Dashboard: a narrow select column, then 7 grouped columns weighted by how
+   much each one has to say. */
+.dashboard-table th:nth-child(1) { width: 44px; }
+.dashboard-table th:nth-child(2) { width: 19%; }
+.dashboard-table th:nth-child(3) { width: 23%; }
+.dashboard-table th:nth-child(4) { width: 20%; }
+.dashboard-table th:nth-child(5) { width: 7%; }
+.dashboard-table th:nth-child(6) { width: 10%; }
+.dashboard-table th:nth-child(7) { width: 11%; }
+.dashboard-table th:nth-child(8) { width: 10%; }
 
 th,
 td {
@@ -3382,4 +3384,135 @@ li {
    (and sticks after a tap on touch screens) — keep the button solid here. */
 .camera-panel .file-action.secondary {
   --btn-bg-hover: var(--surface-2);
+}
+
+
+/* ── CUSTOM MESSAGE TO SELECTED CARDS ───────────────────────────── */
+.dashboard-table .select-cell {
+  text-align: center;
+  padding-inline: 8px;
+}
+
+.dashboard-table tbody tr.row-selected td {
+  background: var(--gold-wash);
+}
+
+.selection-bar {
+  position: sticky;
+  top: 12px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--gold-border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+}
+
+.selection-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.selection-bar-warning {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.modal-panel.compose-message {
+  width: min(640px, 100%);
+}
+
+.compose-message label {
+  margin-top: 14px;
+}
+
+.message-recipients-head {
+  margin-top: 14px;
+  color: var(--text-muted);
+}
+
+.message-recipients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-size: 13px;
+}
+
+.message-chip .ltr-text {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.message-chip.no-email {
+  border-color: var(--warning-border);
+  background: var(--warning-wash);
+}
+
+.message-chip.no-email .ltr-text {
+  color: var(--warning);
+}
+
+.message-chip button {
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.message-results {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message-results li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.message-results-name {
+  font-weight: 700;
+}
+
+.message-results .badge {
+  margin-inline-start: auto;
+}
+
+.badge.danger {
+  background: var(--danger-wash);
+  border-color: var(--danger-border);
+  color: var(--danger-ink);
 }
