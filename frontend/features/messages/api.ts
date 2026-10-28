@@ -15,11 +15,21 @@ export type SendMessageResponse = {
   results: MessageResult[];
 };
 
-/** Email one message (sent as written) to each selected card, one email per card. */
-export async function sendCardMessage(cardIds: number[], subject: string, body: string): Promise<SendMessageResponse> {
-  return fetchJson<SendMessageResponse>('/cards/send-message', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ card_ids: cardIds, subject, body }),
-  });
+/**
+ * Email one message (sent as written) to each selected card, one email per card.
+ * An optional image is shown inside the email under the text.
+ */
+export async function sendCardMessage(
+  cardIds: number[],
+  subject: string,
+  body: string,
+  image?: File | null,
+): Promise<SendMessageResponse> {
+  const form = new FormData();
+  for (const id of cardIds) form.append('card_ids', String(id));
+  form.append('subject', subject);
+  form.append('body', body);
+  if (image) form.append('image', image, image.name || 'image.png');
+  // No Content-Type header: the browser sets the multipart boundary itself.
+  return fetchJson<SendMessageResponse>('/cards/send-message', { method: 'POST', body: form });
 }

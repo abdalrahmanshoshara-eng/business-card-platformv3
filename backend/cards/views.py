@@ -771,7 +771,9 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = serializer.validated_data
-        results = send_message_to_cards(request.user, data['card_ids'], data['subject'], data['body'])
+        results = send_message_to_cards(
+            request.user, data['card_ids'], data['subject'], data['body'], image=data.get('image'),
+        )
         sent = sum(r['status'] == STATUS_SENT for r in results)
         return Response(
             {'detail': f'تم إرسال الرسالة إلى {sent} من {len(results)}.',

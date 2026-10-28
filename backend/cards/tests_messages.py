@@ -174,3 +174,100 @@ class SendMessageTests(TestCase):
         from rest_framework.test import APIClient
         resp = APIClient().post(URL, {'card_ids': [1], 'subject': 's', 'body': 'b'}, format='json')
         self.assertIn(resp.status_code, (401, 403))
+
+
+def _image_upload(name='poster.png', size=(1600, 2000), mode='RGB', fmt='PNG'):
+    import io
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new(mode, size, 'white').save(buf, format=fmt)
+    return SimpleUploadedFile(name, buf.getvalue(), content_type=f'image/{fmt.lower()}')
+
+
+@override_settings(
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+    WELCOME_FROM_EMAIL='platform@example.com',
+)
+class SendMessageImageTests(TestCase):
+    """An optional image (e.g. an announcement poster) shown inside the email."""
+
+    def setUp(self):
+        self.user = make_user('alice')
+        self.client = auth_client(self.user)
+        self.card = make_card(self.user, ['a@x.com'])
+
+    def post(self, image, **extra):
+        data = {'card_ids': [self.card.id], 'subject': 'إعلان', 'body': 'يرجى الاطلاع.', 'image': image}
+        data.update(extra)
+        return self.client.post(URL, data, format='multipart')
+
+    def inline_parts(self, message):
+        return {
+            part['Content-ID']: part
+            for part in message.message().walk()
+            if part.get('Content-ID')
+        }
+
+    def test_image_is_embedded_inline_under_the_text(self):
+        resp = self.post(_image_upload())
+
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data['sent'], 1)
+        message = mail.outbox[0]
+        html = message.alternatives[0][0]
+        self.assertIn('cid:messageimage', html)
+        self.assertLess(html.index('يرجى الاطلاع.'), html.index('cid:messageimage'))
+        parts = self.inline_parts(message)
+        self.assertIn('<messageimage>', parts)
+        self.assertIn('<welcomelogo>', parts)
+
+    def test_image_is_scaled_down_and_reencoded(self):
+        import io
+
+        from PIL import Image
+
+        self.post(_image_upload(size=(3000, 2000)))
+
+        part = self.inline_parts(mail.outbox[0])['<messageimage>']
+        self.assertEqual(part.get_content_type(), 'image/jpeg')
+        with Image.open(io.BytesIO(part.get_payload(decode=True))) as img:
+            self.assertEqual(img.size, (1200, 800))
+
+    def test_transparent_image_stays_png(self):
+        self.post(_image_upload(mode='RGBA'))
+        part = self.inline_parts(mail.outbox[0])['<messageimage>']
+        self.assertEqual(part.get_content_type(), 'image/png')
+
+    def test_every_recipient_gets_the_image(self):
+        other = make_card(self.user, ['b@x.com'])
+        resp = self.post(_image_upload(), card_ids=[self.card.id, other.id])
+        self.assertEqual(resp.data['sent'], 2)
+        for message in mail.outbox:
+            self.assertIn('<messageimage>', self.inline_parts(message))
+
+    def test_without_image_has_no_image_block(self):
+        resp = self.client.post(
+            URL, {'card_ids': [self.card.id], 'subject': 's', 'body': 'b'}, format='multipart',
+        )
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertNotIn('cid:messageimage', mail.outbox[0].alternatives[0][0])
+
+    def test_rejects_a_file_that_is_not_an_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        fake = SimpleUploadedFile('poster.png', b'not really an image', content_type='image/png')
+        resp = self.post(fake)
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['error_type'], 'validation_error')
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_rejects_unsupported_type(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        resp = self.post(SimpleUploadedFile('a.pdf', b'%PDF-1.4', content_type='application/pdf'))
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(len(mail.outbox), 0)

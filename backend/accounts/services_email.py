@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 # external recipients can't reach the LAN, so a linked image would not load.
 _LOGO_PATH = Path(__file__).resolve().parent / 'assets' / 'welcome-logo.png'
 _LOGO_CID = 'welcomelogo'
+# Optional image the sender adds to a message (e.g. an announcement poster),
+# embedded inline under the text the same way as the logo.
+_IMAGE_CID = 'messageimage'
 
 # Default welcome content, used when the user hasn't customised it in their
 # profile. They can override both languages in the profile form. The Arabic
@@ -112,7 +115,7 @@ def _without_placeholder(section: WelcomeSection) -> WelcomeSection:
     ))
 
 
-def _welcome_html(sections: list[WelcomeSection], has_logo: bool) -> str:
+def _welcome_html(sections: list[WelcomeSection], has_logo: bool, has_image: bool = False) -> str:
     """A polished HTML body carrying the platform's visual identity: a green
     header bar with the ministry logo and a gold rule, so the message reads as
     coming from the ministry.
@@ -152,6 +155,13 @@ def _welcome_html(sections: list[WelcomeSection], has_logo: bool) -> str:
             f'{rule}<div dir="{direction}" lang="{escape(section.language)}" style="text-align:{align}">'
             f'{heading}'
             f'<div style="font-size:16px;line-height:2;color:#2c2a26">{safe_body}</div>'
+            '</div>'
+        )
+    if has_image:
+        blocks.append(
+            '<div style="margin-top:22px;text-align:center">'
+            f'<img src="cid:{_IMAGE_CID}" alt="" width="500" '
+            'style="width:100%;max-width:500px;height:auto;display:block;margin:0 auto;border-radius:10px">'
             '</div>'
         )
     body_html = ''.join(blocks)
@@ -196,12 +206,15 @@ def send_welcome_email(
     subject: str = '',
     body: str = '',
     sections: list[WelcomeSection] | None = None,
+    image: tuple[bytes, str] | None = None,
 ) -> None:
     """Send the message to ``to_email`` from the single platform address, with
     the ministry logo embedded inline. Raises WelcomeEmailError on failure (user-safe).
 
     Pass either ``sections`` (one block per language) or a single
     ``subject``/``body`` pair, which is treated as one Arabic block.
+    ``image`` is an optional ``(bytes, subtype)`` pair (subtype 'jpeg'/'png')
+    shown inline under the text.
     """
     platform_from = (getattr(settings, 'WELCOME_FROM_EMAIL', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')).strip()
     if not platform_from:
@@ -233,13 +246,20 @@ def send_welcome_email(
             to=[to_email],
             connection=get_connection(),  # platform default (EMAIL_* settings)
         )
-        message.attach_alternative(_welcome_html(sections, bool(logo)), 'text/html')
+        message.attach_alternative(_welcome_html(sections, bool(logo), has_image=bool(image)), 'text/html')
+        inline = []
         if logo:
-            image = MIMEImage(logo)
-            image.add_header('Content-ID', f'<{_LOGO_CID}>')
-            image.add_header('Content-Disposition', 'inline', filename='logo.png')
-            message.attach(image)
-            # multipart/related so the HTML can reference the inline CID image.
+            inline.append((logo, 'png', _LOGO_CID, 'logo.png'))
+        if image:
+            data, subtype = image
+            inline.append((data, subtype, _IMAGE_CID, f'image.{"jpg" if subtype == "jpeg" else subtype}'))
+        for data, subtype, cid, filename in inline:
+            part = MIMEImage(data, _subtype=subtype)
+            part.add_header('Content-ID', f'<{cid}>')
+            part.add_header('Content-Disposition', 'inline', filename=filename)
+            message.attach(part)
+        if inline:
+            # multipart/related so the HTML can reference the inline CID images.
             message.mixed_subtype = 'related'
         sent = message.send(fail_silently=False)
     except Exception as exc:

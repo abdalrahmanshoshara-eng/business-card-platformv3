@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent } from 'react';
 import type { BusinessCard } from '@/lib/api';
 import { sendCardMessage, type MessageResult } from './api';
+import { firstImageFile, messageImageError } from './image';
 import { MAX_RECIPIENTS, MESSAGE_STATUS_LABELS, cardsWithoutEmail } from './selection';
 
 function cardName(card: BusinessCard) {
@@ -11,7 +12,8 @@ function cardName(card: BusinessCard) {
 
 /**
  * Write one message and email it to the selected cards. The text is sent as
- * written; each card gets its own email at its first address.
+ * written; each card gets its own email at its first address. An optional
+ * image (picked or pasted with Ctrl+V) is shown inside the email under the text.
  */
 export default function ComposeMessageModal({
   cards,
@@ -31,6 +33,46 @@ export default function ComposeMessageModal({
   const [error, setError] = useState('');
   const [results, setResults] = useState<MessageResult[] | null>(null);
   const [summary, setSummary] = useState('');
+  const [image, setImage] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  // Preview URL for the chosen image, released when it changes or on close.
+  useEffect(() => {
+    if (!image) {
+      setImageUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(image);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
+  function chooseImage(file: File | null) {
+    if (!file) return;
+    const problem = messageImageError(file);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setError('');
+    setImage(file);
+  }
+
+  function clearImage() {
+    setImage(null);
+    if (fileInput.current) fileInput.current.value = '';
+  }
+
+  // Ctrl+V anywhere in the window: an image on the clipboard becomes the
+  // message image; pasting plain text keeps working as usual.
+  function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+    if (sending || results) return;
+    const file = firstImageFile(event.clipboardData?.files);
+    if (!file) return;
+    event.preventDefault();
+    chooseImage(file);
+  }
 
   const withoutEmail = cardsWithoutEmail(cards);
   const reachable = cards.length - withoutEmail.length;
@@ -42,7 +84,7 @@ export default function ComposeMessageModal({
     setSending(true);
     setError('');
     try {
-      const res = await sendCardMessage(cards.map((card) => card.id), subject, body);
+      const res = await sendCardMessage(cards.map((card) => card.id), subject, body, image);
       setResults(res.results);
       setSummary(res.detail);
       onSent();
@@ -55,7 +97,7 @@ export default function ComposeMessageModal({
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="إرسال رسالة إلى الكروت المحددة">
-      <div className="modal-panel compose-message">
+      <div className="modal-panel compose-message" onPaste={handlePaste}>
         <div className="section-head">
           <h2>{results ? 'نتيجة الإرسال' : 'إرسال رسالة'}</h2>
           <button type="button" className="btn-small" onClick={onClose} disabled={sending}>
@@ -141,9 +183,41 @@ export default function ComposeMessageModal({
                 disabled={sending}
               />
             </label>
+            <div className="message-image">
+              <span className="message-image-label">صورة داخل الرسالة (اختياري)</span>
+              {imageUrl ? (
+                <div className="message-image-preview">
+                  <img src={imageUrl} alt="الصورة المرفقة بالرسالة" />
+                  <div className="message-image-actions">
+                    <button type="button" className="btn-small" onClick={() => fileInput.current?.click()} disabled={sending}>
+                      تغيير الصورة
+                    </button>
+                    <button type="button" className="btn-small danger" onClick={clearImage} disabled={sending}>
+                      إزالة الصورة
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="message-image-drop"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={sending}
+                >
+                  🖼️ اختر صورة، أو الصقها هنا بـ Ctrl+V
+                </button>
+              )}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                hidden
+                onChange={(event) => chooseImage(event.target.files?.[0] || null)}
+              />
+            </div>
             <p className="helper-text">
-              تُرسل الرسالة كما كتبتها، في بريد مستقل لكل كرت (لا يرى المستلمون بعضهم)، من بريد المنصة باسم بريدك
-              وتصل الردود إليك.
+              تُرسل الرسالة كما كتبتها، والصورة تظهر داخلها تحت النص، في بريد مستقل لكل كرت (لا يرى المستلمون
+              بعضهم)، من بريد الوزارة.
             </p>
 
             {error && <p className="status-box error">{error}</p>}

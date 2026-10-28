@@ -8,6 +8,7 @@ from rest_framework import serializers
 from .models import BusinessCard, CompanyDomainEnrichment
 from .services.card_messages import MAX_RECIPIENTS
 from .services.normalization import normalize_website
+from .services.security import validate_image_upload
 
 
 class StringListField(serializers.ListField):
@@ -112,3 +113,9 @@ class CardMessageSerializer(serializers.Serializer):
     def validate_subject(self, value: str) -> str:
         # A mail header is one line; collapse any newlines the user pasted.
         return re.sub(r'\s+', ' ', value).strip()
+
+    image = serializers.FileField(required=False, allow_null=True)
+
+    def validate_image(self, value):
+        # Same checks as card photos: declared type, size and real image bytes.
+        return validate_image_upload(value)
