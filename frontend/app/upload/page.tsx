@@ -92,6 +92,9 @@ function UploadPageInner() {
 
   // Welcome email: a prompt appears after a new card is saved.
   const [welcomePromptOpen, setWelcomePromptOpen] = useState(false);
+  // The server said no sender email is set even though the page thought one
+  // was (e.g. cleared in another tab): show the setup form regardless.
+  const [senderMissing, setSenderMissing] = useState(false);
   const [welcomeSending, setWelcomeSending] = useState(false);
   const [welcomeInfo, setWelcomeInfo] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -249,11 +252,16 @@ function UploadPageInner() {
       const data = await sendCardWelcome(savedCard.id, resend);
       if (data.card) setSavedCard(data.card);
       setWelcomeInfo({ type: 'success', text: data.detail || 'تم إرسال رسالة الترحيب.' });
+      setWelcomePromptOpen(false);
     } catch (error: any) {
+      if (error?.errorType === 'welcome_not_configured') {
+        setSenderMissing(true);  // keep the popup open, now asking for the email
+        return;
+      }
       setWelcomeInfo({ type: 'error', text: error.message || 'تعذّر إرسال رسالة الترحيب.' });
+      setWelcomePromptOpen(false);
     } finally {
       setWelcomeSending(false);
-      setWelcomePromptOpen(false);
     }
   }
 
@@ -482,10 +490,13 @@ function UploadPageInner() {
 
       <WelcomePrompt
         open={welcomePromptOpen}
-        mode={welcomeConfigured ? 'confirm' : 'setup'}
+        mode={welcomeConfigured && !senderMissing ? 'confirm' : 'setup'}
         busy={welcomeSending}
         onConfirm={doSendWelcome}
-        onSaved={doSendWelcome}
+        onSaved={() => {
+          setSenderMissing(false);
+          doSendWelcome();
+        }}
         onSetupEmail={() => router.push('/profile')}
         onClose={() => setWelcomePromptOpen(false)}
       />
