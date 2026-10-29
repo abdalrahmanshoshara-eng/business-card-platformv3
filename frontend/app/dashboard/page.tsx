@@ -990,7 +990,13 @@ function DashboardPageInner() {
         <ComposeMessageModal
           cards={[...selected.values()]}
           onRemove={(card) => setSelected((cur) => toggleCard(cur, card))}
-          onSent={() => setSelected(new Map())}
+          onSent={(settledIds) =>
+            setSelected((cur) => {
+              const next = new Map(cur);
+              for (const id of settledIds) next.delete(id);
+              return next;
+            })
+          }
           onClose={() => setComposeOpen(false)}
           onNeedsSender={() => setPendingAfterSetup({ kind: "compose" })}
         />

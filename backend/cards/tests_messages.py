@@ -271,3 +271,61 @@ class SendMessageImageTests(TestCase):
         resp = self.post(SimpleUploadedFile('a.pdf', b'%PDF-1.4', content_type='application/pdf'))
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(len(mail.outbox), 0)
+
+
+@override_settings(WELCOME_FROM_EMAIL='platform@example.com')
+class SendMessageConnectionTests(TestCase):
+    """A send to many cards logs in to the mail server once, not per email."""
+
+    def setUp(self):
+        self.user = make_user('alice')
+        configure_profile(self.user, sender_email='alice@example.com')
+        self.client = auth_client(self.user)
+
+    def test_reuses_one_smtp_connection_for_all_cards(self):
+        from unittest.mock import MagicMock
+
+        cards = [make_card(self.user, [f'p{i}@x.com']) for i in range(4)]
+        conn = MagicMock()
+        conn.send_messages.return_value = 1
+
+        with patch('cards.services.card_messages.get_connection', return_value=conn) as factory:
+            resp = self.client.post(
+                URL, {'card_ids': [c.id for c in cards], 'subject': 's', 'body': 'b'}, format='json',
+            )
+
+        self.assertEqual(resp.data['sent'], 4)
+        factory.assert_called_once()
+        conn.open.assert_called_once()
+        self.assertEqual(conn.send_messages.call_count, 4)
+        conn.close.assert_called()
+
+    def test_failure_closes_the_connection_and_the_rest_still_send(self):
+        from unittest.mock import MagicMock
+
+        cards = [make_card(self.user, [f'p{i}@x.com']) for i in range(3)]
+        conn = MagicMock()
+        conn.send_messages.side_effect = [Exception('connection dropped'), 1, 1]
+
+        with patch('cards.services.card_messages.get_connection', return_value=conn):
+            resp = self.client.post(
+                URL, {'card_ids': [c.id for c in cards], 'subject': 's', 'body': 'b'}, format='json',
+            )
+
+        self.assertEqual([r['status'] for r in resp.data['results']], ['failed', 'sent', 'sent'])
+        # Closed after the failure (so the next send reconnects) and at the end.
+        self.assertGreaterEqual(conn.close.call_count, 2)
+
+    def test_unreachable_server_reports_failed_instead_of_crashing(self):
+        from unittest.mock import MagicMock
+
+        card = make_card(self.user, ['a@x.com'])
+        conn = MagicMock()
+        conn.open.side_effect = OSError('unreachable')
+        conn.send_messages.side_effect = OSError('unreachable')
+
+        with patch('cards.services.card_messages.get_connection', return_value=conn):
+            resp = self.client.post(URL, {'card_ids': [card.id], 'subject': 's', 'body': 'b'}, format='json')
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['results'][0]['status'], 'failed')

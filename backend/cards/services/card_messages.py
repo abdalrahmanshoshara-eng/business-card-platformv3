@@ -19,6 +19,8 @@ import re
 
 from PIL import Image, ImageOps
 
+from django.core.mail import get_connection
+
 from accounts.services_email import WelcomeEmailError, WelcomeSection, send_welcome_email
 
 from .access import cards_for_user
@@ -103,31 +105,60 @@ def send_message_to_cards(user, card_ids: list[int], subject: str, body: str, im
     sent_to: set[str] = set()
     results = []
 
-    for card_id in ids:
-        card = cards.get(card_id)
-        if card is None:
-            results.append({'card_id': card_id, 'name': '', 'email': '', 'status': STATUS_NOT_FOUND})
-            continue
-
-        email = _first_email(card)
-        result = {'card_id': card.id, 'name': _display_name(card), 'email': email}
-        if not email:
-            result['status'] = STATUS_NO_EMAIL
-        elif email.lower() in sent_to:
-            result['status'] = STATUS_DUPLICATE_EMAIL
-        else:
-            try:
-                send_welcome_email(profile, to_email=email, sections=[section], image=inline_image)
-            except WelcomeEmailError:
-                logger.warning('card_message_failed card_id=%s', card.id)
-                result['status'] = STATUS_FAILED
-            else:
-                sent_to.add(email.lower())
-                result['status'] = STATUS_SENT
-        results.append(result)
+    # One SMTP session for the whole batch: a TLS handshake + login per email
+    # made larger sends outlast the reverse proxy's timeout.
+    connection = get_connection()
+    try:
+        connection.open()
+    except Exception:
+        # Leave it closed; each send then retries the connection and is
+        # reported as failed on its own if the server is really unreachable.
+        logger.warning('card_message_connection_failed user_id=%s', user.id)
+    try:
+        for card_id in ids:
+            results.append(_send_to_card(
+                card_id, cards.get(card_id), profile, section, inline_image, sent_to, connection,
+            ))
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
 
     logger.info(
         'card_message_sent user_id=%s requested=%s sent=%s',
         user.id, len(ids), sum(r['status'] == STATUS_SENT for r in results),
     )
     return results
+
+
+def _send_to_card(card_id, card, profile, section, inline_image, sent_to: set[str], connection) -> dict:
+    """Send to one card (or explain why not); records the address in ``sent_to``."""
+    if card is None:
+        return {'card_id': card_id, 'name': '', 'email': '', 'status': STATUS_NOT_FOUND}
+
+    email = _first_email(card)
+    result = {'card_id': card.id, 'name': _display_name(card), 'email': email}
+    if not email:
+        result['status'] = STATUS_NO_EMAIL
+    elif email.lower() in sent_to:
+        result['status'] = STATUS_DUPLICATE_EMAIL
+    else:
+        try:
+            send_welcome_email(
+                profile, to_email=email, sections=[section], image=inline_image, connection=connection,
+            )
+        except WelcomeEmailError:
+            logger.warning('card_message_failed card_id=%s', card.id)
+            result['status'] = STATUS_FAILED
+            # The session may be dead (e.g. the server dropped it): close it so
+            # the next card's send opens a fresh one instead of failing too.
+            try:
+                connection.close()
+            except Exception:
+                pass
+        else:
+            sent_to.add(email.lower())
+            result['status'] = STATUS_SENT
+    return result
+

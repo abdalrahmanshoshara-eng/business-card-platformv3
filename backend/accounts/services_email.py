@@ -232,6 +232,7 @@ def send_welcome_email(
     body: str = '',
     sections: list[WelcomeSection] | None = None,
     image: tuple[bytes, str] | None = None,
+    connection=None,
 ) -> None:
     """Send the message to ``to_email`` from the single platform address, showing
     the profile owner's email as From display name + Reply-To, with the ministry
@@ -240,7 +241,8 @@ def send_welcome_email(
     Pass either ``sections`` (one block per language) or a single
     ``subject``/``body`` pair, which is treated as one Arabic block.
     ``image`` is an optional ``(bytes, subtype)`` pair (subtype 'jpeg'/'png')
-    shown inline under the text.
+    shown inline under the text. ``connection`` lets a caller sending many
+    messages reuse one open SMTP connection instead of logging in per email.
     """
     platform_from = (getattr(settings, 'WELCOME_FROM_EMAIL', '') or getattr(settings, 'DEFAULT_FROM_EMAIL', '')).strip()
     if not platform_from:
@@ -275,7 +277,7 @@ def send_welcome_email(
             from_email=from_email,
             to=[to_email],
             reply_to=[user_email] if user_email else None,
-            connection=get_connection(),  # platform default (EMAIL_* settings)
+            connection=connection or get_connection(),  # platform default (EMAIL_* settings)
         )
         message.attach_alternative(
             _welcome_html(sections, user_email, bool(logo), has_image=bool(image)), 'text/html',

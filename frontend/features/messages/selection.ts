@@ -41,7 +41,16 @@ export function pageSelectionState<T extends { id: number }>(
   return count === pageCards.length ? 'all' : 'some';
 }
 
-export type MessageStatus = 'sent' | 'failed' | 'no_email' | 'duplicate_email' | 'not_found';
+export type MessageStatus =
+  | 'sent'
+  | 'failed'
+  | 'no_email'
+  | 'duplicate_email'
+  | 'not_found'
+  /** Client-side: its batch's request failed (e.g. a timeout) — it may or may not have gone out. */
+  | 'unknown'
+  /** Client-side: sending stopped before this card's batch. */
+  | 'not_sent';
 
 export const MESSAGE_STATUS_LABELS: Record<MessageStatus, string> = {
   sent: 'تم الإرسال',
@@ -49,6 +58,8 @@ export const MESSAGE_STATUS_LABELS: Record<MessageStatus, string> = {
   no_email: 'لا يوجد بريد',
   duplicate_email: 'بريد مكرر (أُرسل مرة واحدة)',
   not_found: 'غير متاح',
+  unknown: 'غير مؤكد — تحقّق من البريد المُرسَل',
+  not_sent: 'لم يُرسل',
 };
 
 /** Selected cards that carry no email — shown as a warning before sending. */

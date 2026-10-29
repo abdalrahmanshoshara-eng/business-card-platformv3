@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react';
 import type { BusinessCard } from '@/lib/api';
-import { sendCardMessage, type MessageResult } from './api';
+import { sendCardMessageInBatches, type MessageResult, type SendProgress } from './api';
+import { isSettled } from './batches';
 import { firstImageFile, messageImageError } from './image';
 import { MAX_RECIPIENTS, MESSAGE_STATUS_LABELS, cardsWithoutEmail } from './selection';
 
@@ -25,8 +26,9 @@ export default function ComposeMessageModal({
   cards: BusinessCard[];
   onRemove: (card: BusinessCard) => void;
   onClose: () => void;
-  /** Called once the send finished, so the caller can clear the selection. */
-  onSent: () => void;
+  /** Called once the send finished with the cards to drop from the selection
+   *  (failed / not-sent ones stay selected for a retry). */
+  onSent: (settledIds: number[]) => void;
   /** The backend says the user has no sender email: ask for it, keeping this window as is. */
   onNeedsSender: () => void;
 }) {
@@ -35,7 +37,8 @@ export default function ComposeMessageModal({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [results, setResults] = useState<MessageResult[] | null>(null);
-  const [summary, setSummary] = useState('');
+  const [stoppedError, setStoppedError] = useState('');
+  const [progress, setProgress] = useState<SendProgress | null>(null);
   const [image, setImage] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -86,11 +89,12 @@ export default function ComposeMessageModal({
     if (!canSend) return;
     setSending(true);
     setError('');
+    setProgress(null);
     try {
-      const res = await sendCardMessage(cards.map((card) => card.id), subject, body, image);
+      const res = await sendCardMessageInBatches(cards, subject, body, image, setProgress);
       setResults(res.results);
-      setSummary(res.detail);
-      onSent();
+      setStoppedError(res.stoppedError);
+      onSent(res.results.filter((r) => isSettled(r.status)).map((r) => r.card_id));
     } catch (e: any) {
       if (e?.errorType === 'welcome_not_configured') {
         onNeedsSender();
@@ -114,13 +118,27 @@ export default function ComposeMessageModal({
 
         {results ? (
           <>
-            <p className="status-box success">{summary}</p>
+            <p className={stoppedError ? 'status-box warning' : 'status-box success'}>
+              تم إرسال الرسالة إلى {results.filter((r) => r.status === 'sent').length} من {results.length}.
+            </p>
+            {stoppedError && (
+              <p className="status-box error">
+                توقف الإرسال: {stoppedError}. الكروت «غير المؤكدة» قد تكون وصلتها الرسالة؛ تحقّق من البريد
+                المُرسَل قبل إعادة الإرسال إليها. الكروت التي لم تُرسل أو فشلت بقيت محددة.
+              </p>
+            )}
             <ul className="message-results">
               {results.map((r) => (
                 <li key={r.card_id}>
                   <span className="message-results-name">{r.name || `#${r.card_id}`}</span>
                   {r.email && <span className="cell-sub ltr-text">{r.email}</span>}
-                  <span className={r.status === 'sent' ? 'badge success' : r.status === 'failed' ? 'badge danger' : 'badge warning'}>
+                  <span
+                    className={
+                      r.status === 'sent' ? 'badge success'
+                        : r.status === 'failed' || r.status === 'not_sent' ? 'badge danger'
+                          : 'badge warning'
+                    }
+                  >
                     {MESSAGE_STATUS_LABELS[r.status] ?? r.status}
                   </span>
                 </li>
@@ -231,7 +249,11 @@ export default function ComposeMessageModal({
 
             <div className="button-row">
               <button type="button" className="btn-green" onClick={send} disabled={!canSend}>
-                {sending ? 'جارٍ الإرسال...' : `إرسال إلى ${reachable}`}
+                {sending
+                  ? progress && progress.total > 0
+                    ? `جارٍ الإرسال ${progress.done} من ${progress.total}...`
+                    : 'جارٍ الإرسال...'
+                  : `إرسال إلى ${reachable}`}
               </button>
               <button type="button" onClick={onClose} disabled={sending}>إلغاء</button>
             </div>
