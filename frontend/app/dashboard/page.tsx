@@ -3,7 +3,10 @@ import { RequireAuth as __RequireAuth } from '@/features/auth/Guard';
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PageHero from "@/components/PageHero";
+import WelcomePrompt from "@/components/WelcomePrompt";
+import { useAuth } from "@/features/auth/AuthProvider";
 import {
   BusinessCard,
   combineBilingual,
@@ -234,7 +237,15 @@ function displayInvestment(card: BusinessCard) {
 }
 
 function DashboardPageInner() {
+  const { user } = useAuth();
+  const router = useRouter();
+  const welcomeConfigured = !!user?.welcome_email?.sender_email;
   const [welcomeBusyId, setWelcomeBusyId] = useState<number | null>(null);
+  // Set when an action needs a sender email first: what to resume once the
+  // user has typed it in the setup popup.
+  const [pendingAfterSetup, setPendingAfterSetup] = useState<
+    { kind: "compose" } | { kind: "welcome"; card: BusinessCard } | null
+  >(null);
   const [welcomeErrorMsg, setWelcomeErrorMsg] = useState("");
   const [q, setQ] = useState("");
   const [company, setCompany] = useState("");
@@ -315,6 +326,11 @@ function DashboardPageInner() {
   const pageSelection = pageSelectionState(selected, cards);
 
   function openCompose() {
+    // No sender email → ask for it first, then open the window.
+    if (!welcomeConfigured) {
+      setPendingAfterSetup({ kind: "compose" });
+      return;
+    }
     setComposeOpen(true);
   }
 
@@ -386,9 +402,14 @@ function DashboardPageInner() {
     setError("");
   }
 
-  async function handleWelcome(card: BusinessCard) {
+  async function handleWelcome(card: BusinessCard, senderJustSet = false) {
     // Already sent → not actionable (the cell renders a static chip, not a button).
     if (card.welcome_status === "sent") return;
+    // Not configured → ask for the sender email, then send to this card.
+    if (!welcomeConfigured && !senderJustSet) {
+      setPendingAfterSetup({ kind: "welcome", card });
+      return;
+    }
     if (welcomeBusyId) return;
     setWelcomeBusyId(card.id);
     setWelcomeErrorMsg("");
@@ -399,6 +420,12 @@ function DashboardPageInner() {
         setCards((cur) => cur.map((c) => (c.id === updated.id ? updated : c)));
       }
     } catch (e: any) {
+      // The page thought a sender email was set but the server disagrees
+      // (e.g. cleared in another tab): ask for it, then send to this card.
+      if (e?.errorType === "welcome_not_configured") {
+        setPendingAfterSetup({ kind: "welcome", card });
+        return;
+      }
       // Show the reason centred on screen; mark the row as failed for a retry.
       setWelcomeErrorMsg(e.message || "تعذّر إرسال رسالة الترحيب.");
       setCards((cur) => cur.map((c) => (c.id === card.id ? { ...c, welcome_status: "failed" } : c)));
@@ -965,8 +992,23 @@ function DashboardPageInner() {
           onRemove={(card) => setSelected((cur) => toggleCard(cur, card))}
           onSent={() => setSelected(new Map())}
           onClose={() => setComposeOpen(false)}
+          onNeedsSender={() => setPendingAfterSetup({ kind: "compose" })}
         />
       )}
+
+      <WelcomePrompt
+        open={pendingAfterSetup !== null}
+        mode="setup"
+        purpose={pendingAfterSetup?.kind === "compose" ? "message" : "welcome"}
+        onSaved={() => {
+          const pending = pendingAfterSetup;
+          setPendingAfterSetup(null);
+          if (pending?.kind === "compose") setComposeOpen(true);
+          else if (pending?.kind === "welcome") handleWelcome(pending.card, true);
+        }}
+        onSetupEmail={() => router.push('/profile')}
+        onClose={() => setPendingAfterSetup(null)}
+      />
 
       {welcomeErrorMsg && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="فشل إرسال الترحيب">

@@ -186,12 +186,13 @@ class WelcomeTestView(APIView):
         except DjangoValidationError:
             return Response({'detail': 'يرجى إدخال بريد إلكتروني صالح.', 'error_type': 'invalid_email'}, status=status.HTTP_400_BAD_REQUEST)
 
+        profile = getattr(request.user, 'profile', None)
         letter = effective_letter(request.user)
         subject = letter['welcome_subject']
         # No card here, so the placeholder becomes the generic wording.
         body = letter['welcome_message'].replace(SALUTATION_TOKEN, default_salutation('ar'))
         try:
-            send_welcome_email(to_email=to_email, subject=subject, body=body)
+            send_welcome_email(profile, to_email=to_email, subject=subject, body=body)
         except WelcomeEmailError as exc:
             return Response({'detail': str(exc), 'error_type': 'welcome_send_failed'}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({'detail': f'تم إرسال رسالة اختبار إلى {to_email}.', 'sent': True})

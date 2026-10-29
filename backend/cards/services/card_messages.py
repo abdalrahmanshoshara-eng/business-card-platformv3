@@ -1,9 +1,9 @@
 """Send one free-text message, written by the user, to several of their cards.
 
 Delivery reuses the welcome-email transport (``accounts.services_email``): the
-single platform address (the ministry's) is the only sender, and the ministry
-HTML frame wraps the text. Unlike the
-welcome letter, the text is sent exactly as written — no salutation and no
+single platform address sends, the user's sender email (set on their profile)
+is the From display name and Reply-To, and the ministry HTML frame wraps the
+text. Unlike the welcome letter, the text is sent exactly as written — no salutation and no
 per-language blocks — and nothing is recorded on the card.
 
 Each card gets its own email so recipients never see each other. Cards are
@@ -48,6 +48,10 @@ def _section(subject: str, body: str) -> WelcomeSection:
     return WelcomeSection(subject=subject, body=body, language='ar' if rtl else 'en', rtl=rtl)
 
 
+class CardMessageNotConfigured(Exception):
+    """The user has no sender email set, so nothing can be sent on their behalf."""
+
+
 def prepare_message_image(uploaded_file) -> tuple[bytes, str]:
     """Re-encode an already validated upload for embedding in the email:
     EXIF orientation applied, metadata dropped, scaled down to IMAGE_MAX_WIDTH.
@@ -85,8 +89,13 @@ def send_message_to_cards(user, card_ids: list[int], subject: str, body: str, im
     Returns one result per distinct id, in the order given:
     ``{'card_id', 'name', 'email', 'status'}`` where status is one of
     sent / failed / no_email / duplicate_email / not_found. Two cards sharing an
-    address only produce one email.
+    address only produce one email. Raises CardMessageNotConfigured when the
+    user has no sender email.
     """
+    profile = getattr(user, 'profile', None)
+    if profile is None or not profile.has_welcome_config():
+        raise CardMessageNotConfigured()
+
     ids = list(dict.fromkeys(card_ids))
     cards = {card.id: card for card in cards_for_user(user).filter(id__in=ids)}
     section = _section(subject, body)
@@ -108,7 +117,7 @@ def send_message_to_cards(user, card_ids: list[int], subject: str, body: str, im
             result['status'] = STATUS_DUPLICATE_EMAIL
         else:
             try:
-                send_welcome_email(to_email=email, sections=[section], image=inline_image)
+                send_welcome_email(profile, to_email=email, sections=[section], image=inline_image)
             except WelcomeEmailError:
                 logger.warning('card_message_failed card_id=%s', card.id)
                 result['status'] = STATUS_FAILED

@@ -55,11 +55,10 @@ class SendMessageTests(TestCase):
         message = mail.outbox[0]
         self.assertEqual(message.subject, 'دعوة')
         self.assertEqual(message.body, body)  # no salutation, no extra language block
-        # The ministry address is the only sender: a leftover per-user sender
-        # email is neither the display name nor the Reply-To.
-        self.assertEqual(message.from_email, 'platform@example.com')
-        self.assertEqual(message.reply_to, [])
-        self.assertNotIn('alice@example.com', message.alternatives[0][0])
+        # Sent through the platform account, showing the user's sender email
+        # (set on their profile) as the display name; replies go to them.
+        self.assertEqual(message.from_email, '"alice@example.com" <platform@example.com>')
+        self.assertEqual(message.reply_to, ['alice@example.com'])
         html = message.alternatives[0][0]
         self.assertIn('dir="rtl"', html)
 
@@ -125,7 +124,7 @@ class SendMessageTests(TestCase):
         b = make_card(self.user, ['b@x.com'])
         calls = []
 
-        def flaky(*, to_email, **kwargs):
+        def flaky(profile, *, to_email, **kwargs):
             calls.append(to_email)
             if to_email == 'a@x.com':
                 raise WelcomeEmailError('smtp down')
@@ -138,15 +137,15 @@ class SendMessageTests(TestCase):
         self.assertEqual(resp.data['sent'], 1)
         self.assertEqual(calls, ['a@x.com', 'b@x.com'])
 
-    def test_sends_without_any_sender_setup(self):
-        user = make_user('carol')  # no profile, no sender email
+    def test_requires_sender_email(self):
+        user = make_user('carol')  # no sender email on the profile
         card = make_card(user, ['a@x.com'])
 
         resp = self.post([card.id], client=auth_client(user))
 
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data['sent'], 1)
-        self.assertEqual(mail.outbox[0].from_email, 'platform@example.com')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data['error_type'], 'welcome_not_configured')
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_validation(self):
         card = make_card(self.user, ['a@x.com'])
@@ -196,6 +195,7 @@ class SendMessageImageTests(TestCase):
 
     def setUp(self):
         self.user = make_user('alice')
+        configure_profile(self.user, sender_email='alice@example.com')
         self.client = auth_client(self.user)
         self.card = make_card(self.user, ['a@x.com'])
 
