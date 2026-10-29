@@ -20,12 +20,15 @@ export default function ComposeMessageModal({
   onRemove,
   onClose,
   onSent,
+  onNeedsSender,
 }: {
   cards: BusinessCard[];
   onRemove: (card: BusinessCard) => void;
   onClose: () => void;
   /** Called once the send finished, so the caller can clear the selection. */
   onSent: () => void;
+  /** The backend says the user has no sender email: ask for it, keeping this window as is. */
+  onNeedsSender: () => void;
 }) {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -89,6 +92,10 @@ export default function ComposeMessageModal({
       setSummary(res.detail);
       onSent();
     } catch (e: any) {
+      if (e?.errorType === 'welcome_not_configured') {
+        onNeedsSender();
+        return;
+      }
       setError(e?.message || 'تعذّر إرسال الرسالة.');
     } finally {
       setSending(false);
@@ -217,7 +224,7 @@ export default function ComposeMessageModal({
             </div>
             <p className="helper-text">
               تُرسل الرسالة كما كتبتها، والصورة تظهر داخلها تحت النص، في بريد مستقل لكل كرت (لا يرى المستلمون
-              بعضهم)، من بريد الوزارة.
+              بعضهم)، من بريد المنصة باسم بريدك المضبوط في ملفك الشخصي، وتصل الردود إليك.
             </p>
 
             {error && <p className="status-box error">{error}</p>}

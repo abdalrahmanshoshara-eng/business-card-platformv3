@@ -41,7 +41,7 @@ from .services.usage import log_gemini_usage
 from .services.enrichment import get_cached_enrichment, run_enrichment
 from accounts.services_email import WelcomeEmailError, send_welcome_email
 from .services.welcome_text import build_welcome_sections
-from .services.card_messages import STATUS_SENT, send_message_to_cards
+from .services.card_messages import STATUS_SENT, CardMessageNotConfigured, send_message_to_cards
 
 logger = logging.getLogger(__name__)
 
@@ -695,6 +695,13 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='send-welcome')
     def send_welcome(self, request, pk=None):
         card = self.get_object()  # ownership-scoped (404 for others' cards)
+        profile = getattr(request.user, 'profile', None)
+        if profile is None or not profile.has_welcome_config():
+            return Response(
+                {'detail': 'يرجى ضبط إعدادات رسالة الترحيب (بريد المُرسِل وكلمة المرور والنص) في ملفك الشخصي أولاً.',
+                 'error_type': 'welcome_not_configured'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         card_emails = [str(e).strip() for e in (card.emails or []) if str(e).strip()]
         requested = (request.data.get('to') or '').strip()
@@ -733,7 +740,7 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
             logger.exception('welcome_sections_failed card_id=%s', card.id)
             sections = None
         try:
-            send_welcome_email(to_email=to_email, sections=sections)
+            send_welcome_email(profile, to_email=to_email, sections=sections)
         except WelcomeEmailError as exc:
             card.welcome_status = BusinessCard.WELCOME_FAILED
             card.welcome_sent_to = to_email
@@ -771,9 +778,16 @@ class BusinessCardViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         data = serializer.validated_data
-        results = send_message_to_cards(
-            request.user, data['card_ids'], data['subject'], data['body'], image=data.get('image'),
-        )
+        try:
+            results = send_message_to_cards(
+                request.user, data['card_ids'], data['subject'], data['body'], image=data.get('image'),
+            )
+        except CardMessageNotConfigured:
+            return Response(
+                {'detail': 'يرجى تعيين بريد المُرسِل في ملفك الشخصي أولاً.',
+                 'error_type': 'welcome_not_configured'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         sent = sum(r['status'] == STATUS_SENT for r in results)
         return Response(
             {'detail': f'تم إرسال الرسالة إلى {sent} من {len(results)}.',
