@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import logging
 import re
+import smtplib
+import socket
 from dataclasses import dataclass, replace
 from email.mime.image import MIMEImage
 from email.utils import formataddr
@@ -61,7 +63,59 @@ DEFAULT_WELCOME_MESSAGE_EN = BODY_EN
 
 
 class WelcomeEmailError(RuntimeError):
-    """Raised when a welcome email cannot be sent. ``message`` is user-safe."""
+    """Raised when a welcome email cannot be sent. ``message`` is user-safe.
+
+    ``reason`` is a short user-safe Arabic explanation of what the mail server
+    said (see ``describe_send_error``), '' when there is no server error."""
+
+    def __init__(self, message: str, reason: str = ''):
+        super().__init__(message)
+        self.reason = reason
+
+
+# Enhanced status code inside an SMTP reply, e.g. "5.4.5" or "5.1.1".
+_ENHANCED_CODE = re.compile(r'\b[245]\.\d{1,3}\.\d{1,3}\b')
+_LIMIT_HINTS = ('limit', 'quota', 'rate', 'too many', 'try again later', '5.4.5', '4.7.0', '4.2.1')
+
+
+def _smtp_reply(exc) -> tuple[int | None, str]:
+    """(code, text) of the server reply carried by an smtplib exception."""
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        code, text = next(iter(exc.recipients.values()), (None, b''))
+    else:
+        code = getattr(exc, 'smtp_code', None)
+        text = getattr(exc, 'smtp_error', b'')
+    if isinstance(text, bytes):
+        text = text.decode('utf-8', 'replace')
+    return code, str(text or '')
+
+
+def describe_send_error(exc: BaseException) -> str:
+    """User-safe Arabic reason for a failed send, with the SMTP code when there
+    is one (so it can be looked up), e.g. "تجاوز حساب الإرسال حدّ الإرسال...
+    (SMTP 550 5.4.5)". Never includes credentials or message content."""
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        reason = 'رفض خادم البريد تسجيل الدخول لحساب الإرسال (تحقّق من كلمة مرور التطبيق في إعدادات الخادم).'
+    elif isinstance(exc, (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, socket.timeout,
+                          TimeoutError, ConnectionError)):
+        return 'تعذّر الاتصال بخادم البريد أو انقطع الاتصال. حاول لاحقًا.'
+    elif isinstance(exc, smtplib.SMTPException):
+        code, text = _smtp_reply(exc)
+        lowered = text.lower()
+        if any(hint in lowered for hint in _LIMIT_HINTS) or code == 421:
+            reason = 'تجاوز حساب الإرسال حدّ الإرسال المسموح (اليومي أو المؤقت). حاول لاحقًا.'
+        elif isinstance(exc, smtplib.SMTPRecipientsRefused) or '5.1.' in text:
+            reason = 'رفض خادم البريد عنوان المستلم (قد يكون العنوان خاطئًا أو غير موجود).'
+        else:
+            reason = 'رفض خادم البريد الرسالة.'
+        enhanced = _ENHANCED_CODE.search(text)
+        detail = ' '.join(str(part) for part in (code, enhanced.group(0) if enhanced else '') if part)
+        return f'{reason} (SMTP {detail})' if detail else reason
+    elif isinstance(exc, OSError):
+        return 'تعذّر الاتصال بخادم البريد. حاول لاحقًا.'
+    else:
+        reason = 'خطأ غير متوقع أثناء الإرسال.'
+    return reason
 
 
 @dataclass(frozen=True)
@@ -299,7 +353,8 @@ def send_welcome_email(
         sent = message.send(fail_silently=False)
     except Exception as exc:
         logger.warning('welcome_email_send_failed error=%s', _sanitize(str(exc)))
-        raise WelcomeEmailError('تعذّر إرسال رسالة الترحيب. تحقّق من إعدادات بريد المنصة.') from exc
+        reason = describe_send_error(exc)
+        raise WelcomeEmailError(f'تعذّر إرسال رسالة الترحيب: {reason}', reason=reason) from exc
 
     if not sent:
         raise WelcomeEmailError('تعذّر إرسال رسالة الترحيب.')

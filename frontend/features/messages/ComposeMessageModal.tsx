@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from 'react';
 import type { BusinessCard } from '@/lib/api';
 import { sendCardMessageInBatches, type MessageResult, type SendProgress } from './api';
-import { isSettled } from './batches';
+import { isSettled, summaryTone } from './batches';
 import { firstImageFile, messageImageError } from './image';
 import { MAX_RECIPIENTS, MESSAGE_STATUS_LABELS, cardsWithoutEmail } from './selection';
 
@@ -118,7 +118,7 @@ export default function ComposeMessageModal({
 
         {results ? (
           <>
-            <p className={stoppedError ? 'status-box warning' : 'status-box success'}>
+            <p className={`status-box ${summaryTone(results.map((r) => r.status))}`}>
               تم إرسال الرسالة إلى {results.filter((r) => r.status === 'sent').length} من {results.length}.
             </p>
             {stoppedError && (
@@ -141,6 +141,7 @@ export default function ComposeMessageModal({
                   >
                     {MESSAGE_STATUS_LABELS[r.status] ?? r.status}
                   </span>
+                  {r.reason && <span className="message-results-reason">{r.reason}</span>}
                 </li>
               ))}
             </ul>

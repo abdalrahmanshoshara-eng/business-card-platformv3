@@ -89,8 +89,8 @@ def send_message_to_cards(user, card_ids: list[int], subject: str, body: str, im
     ``image`` is an optional validated upload, shown inline under the text.
 
     Returns one result per distinct id, in the order given:
-    ``{'card_id', 'name', 'email', 'status'}`` where status is one of
-    sent / failed / no_email / duplicate_email / not_found. Two cards sharing an
+    ``{'card_id', 'name', 'email', 'status'}`` (+ ``'reason'`` when failed) where
+    status is one of sent / failed / no_email / duplicate_email / not_found. Two cards sharing an
     address only produce one email. Raises CardMessageNotConfigured when the
     user has no sender email.
     """
@@ -148,9 +148,10 @@ def _send_to_card(card_id, card, profile, section, inline_image, sent_to: set[st
             send_welcome_email(
                 profile, to_email=email, sections=[section], image=inline_image, connection=connection,
             )
-        except WelcomeEmailError:
+        except WelcomeEmailError as exc:
             logger.warning('card_message_failed card_id=%s', card.id)
             result['status'] = STATUS_FAILED
+            result['reason'] = exc.reason or str(exc)
             # The session may be dead (e.g. the server dropped it): close it so
             # the next card's send opens a fresh one instead of failing too.
             try:

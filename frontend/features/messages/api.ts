@@ -7,6 +7,8 @@ export type MessageResult = {
   name: string;
   email: string;
   status: MessageStatus;
+  /** Why it failed, in plain Arabic (only on failed cards). */
+  reason?: string;
 };
 
 export type SendMessageResponse = {

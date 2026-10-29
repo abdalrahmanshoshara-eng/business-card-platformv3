@@ -329,3 +329,67 @@ class SendMessageConnectionTests(TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['results'][0]['status'], 'failed')
+
+
+class DescribeSendErrorTests(TestCase):
+    """The reason shown next to «فشل الإرسال», derived from the SMTP reply."""
+
+    def describe(self, exc):
+        from accounts.services_email import describe_send_error
+        return describe_send_error(exc)
+
+    def test_daily_limit(self):
+        import smtplib
+        exc = smtplib.SMTPDataError(550, b'5.4.5 Daily user sending limit exceeded.')
+        reason = self.describe(exc)
+        self.assertIn('حدّ الإرسال', reason)
+        self.assertIn('SMTP 550 5.4.5', reason)
+
+    def test_temporary_rate_limit(self):
+        import smtplib
+        reason = self.describe(smtplib.SMTPSenderRefused(421, b'4.7.0 Try again later', 'x@gmail.com'))
+        self.assertIn('حدّ الإرسال', reason)
+
+    def test_recipient_refused(self):
+        import smtplib
+        exc = smtplib.SMTPRecipientsRefused({'a@x.com': (550, b'5.1.1 The email account does not exist')})
+        reason = self.describe(exc)
+        self.assertIn('عنوان المستلم', reason)
+        self.assertIn('5.1.1', reason)
+
+    def test_authentication(self):
+        import smtplib
+        reason = self.describe(smtplib.SMTPAuthenticationError(535, b'5.7.8 Username and Password not accepted'))
+        self.assertIn('تسجيل الدخول', reason)
+
+    def test_connection_problems(self):
+        import smtplib
+        import socket
+        for exc in (smtplib.SMTPServerDisconnected('gone'), socket.timeout('t'), ConnectionResetError()):
+            with self.subTest(exc=type(exc).__name__):
+                self.assertIn('الاتصال', self.describe(exc))
+
+    def test_other_errors_stay_generic(self):
+        self.assertEqual(self.describe(ValueError('boom')), 'خطأ غير متوقع أثناء الإرسال.')
+
+
+@override_settings(WELCOME_FROM_EMAIL='platform@example.com')
+class SendMessageReasonTests(TestCase):
+    def test_failed_card_carries_the_reason(self):
+        import smtplib
+        from unittest.mock import MagicMock
+
+        user = make_user('alice')
+        configure_profile(user, sender_email='alice@example.com')
+        card = make_card(user, ['a@x.com'])
+        conn = MagicMock()
+        conn.send_messages.side_effect = smtplib.SMTPDataError(550, b'5.4.5 Daily user sending limit exceeded.')
+
+        with patch('cards.services.card_messages.get_connection', return_value=conn):
+            resp = auth_client(user).post(
+                URL, {'card_ids': [card.id], 'subject': 's', 'body': 'b'}, format='json',
+            )
+
+        result = resp.data['results'][0]
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('حدّ الإرسال', result['reason'])

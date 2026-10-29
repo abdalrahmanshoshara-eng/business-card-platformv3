@@ -58,3 +58,14 @@ export function planSend(cards: readonly CardLike[], size = BATCH_SIZE): SendPla
 export function isSettled(status: MessageStatus): boolean {
   return status !== 'failed' && status !== 'not_sent';
 }
+
+/**
+ * Colour of the summary box: green only when nothing went wrong, red when
+ * nothing was sent, amber for anything in between.
+ */
+export function summaryTone(statuses: readonly MessageStatus[]): 'success' | 'warning' | 'error' {
+  const sent = statuses.filter((s) => s === 'sent').length;
+  const problems = statuses.filter((s) => s === 'failed' || s === 'unknown' || s === 'not_sent').length;
+  if (sent === 0) return 'error';
+  return problems ? 'warning' : 'success';
+}

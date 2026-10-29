@@ -3594,3 +3594,11 @@ li {
   background: none;
   color: var(--green-deep);
 }
+
+/* Why a card's message failed, under its row in the send results. */
+.message-results-reason {
+  flex-basis: 100%;
+  color: var(--danger-ink);
+  font-size: 13px;
+  line-height: 1.7;
+}

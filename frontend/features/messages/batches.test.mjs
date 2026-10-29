@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isSettled, planSend } from './batches.ts';
+import { isSettled, planSend, summaryTone } from './batches.ts';
 
 const card = (id, emails, person_name = `P${id}`) => ({ id, emails, person_name });
 
@@ -45,4 +45,13 @@ test('failed and not-sent cards stay selected for a retry', () => {
   assert.equal(isSettled('failed'), false);
   assert.equal(isSettled('not_sent'), false);
   assert.equal(isSettled('unknown'), true);
+});
+
+test('summary is green only when nothing went wrong', () => {
+  assert.equal(summaryTone(['sent', 'sent', 'no_email']), 'success');
+  assert.equal(summaryTone(['sent', 'failed']), 'warning');
+  assert.equal(summaryTone(['sent', 'unknown', 'not_sent']), 'warning');
+  assert.equal(summaryTone(['failed']), 'error');
+  assert.equal(summaryTone(['no_email']), 'error');
+  assert.equal(summaryTone([]), 'error');
 });
